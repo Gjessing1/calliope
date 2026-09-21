@@ -25,7 +25,7 @@ services:
       # and reversible; old snapshots are pruned per book.
       CALLIOPE_REVISION_LIMIT: '10'
       # Audiobookshelf integration. Both must be set or ABS is treated as
-      # unconfigured; the token comes from ABS → Settings → Users → API Token.
+      # unconfigured; the token is an ABS API key (Settings → API Keys).
       ABS_URL: http://audiobookshelf:80
       ABS_TOKEN: ${ABS_TOKEN}
       # Where the same library is mounted inside the ABS container — the join

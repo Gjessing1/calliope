@@ -3,7 +3,10 @@ import type { AbsBook } from '@calliope/core';
 export interface AbsConfig {
   /** Origin of the Audiobookshelf server, e.g. `http://audiobookshelf:80`. */
   url: string;
-  /** API token from ABS → Settings → Users → (user) → API Token. */
+  /**
+   * An ABS API key (Settings → API Keys). The user's legacy API token also
+   * works, but ABS 2.26+ reports it as deprecated.
+   */
   token: string;
   /**
    * Where the library root is mounted *inside* the ABS container. The join key
@@ -21,20 +24,25 @@ interface AbsLibrary {
   mediaType: string;
 }
 
+/**
+ * A library item in the *expanded* shape (`POST /api/items/batch/get`).
+ *
+ * The library listing returns a minified shape instead, where authors and
+ * series are flattened into display strings ("A, B", "Series #1") — joining on
+ * those would report author drift on every multi-author book and never see
+ * series drift at all. The listing is used only for ids and paths.
+ */
 interface AbsLibraryItem {
   id: string;
   libraryId: string;
   path?: string;
-  relPath?: string;
   updatedAt?: number;
   media?: {
     coverPath?: string | null;
     metadata?: {
       title?: string;
       subtitle?: string;
-      authorName?: string;
       authors?: Array<{ name?: string }>;
-      narratorName?: string;
       narrators?: string[];
       series?: Array<{ name?: string; sequence?: string | null }>;
       publishedYear?: string;
@@ -46,6 +54,9 @@ interface AbsLibraryItem {
     };
   };
 }
+
+/** Items per `batch/get` request — bounds the request body on a large library. */
+const BATCH_SIZE = 100;
 
 /**
  * Read-side client for Audiobookshelf.
@@ -62,7 +73,7 @@ export class AbsClient {
     this.booksRoot = (config.booksRoot ?? '/books').replace(/\/+$/, '');
   }
 
-  private async request<T>(pathname: string, init: RequestInit = {}): Promise<T> {
+  private async send(pathname: string, init: RequestInit = {}): Promise<Response> {
     const res = await fetch(new URL(pathname, this.config.url), {
       ...init,
       headers: {
@@ -75,7 +86,11 @@ export class AbsClient {
     if (!res.ok) {
       throw new Error(`Audiobookshelf ${pathname} responded ${res.status}`);
     }
-    return (await res.json()) as T;
+    return res;
+  }
+
+  private async request<T>(pathname: string, init: RequestInit = {}): Promise<T> {
+    return (await (await this.send(pathname, init)).json()) as T;
   }
 
   /** The ABS book libraries, or just the configured one. */
@@ -90,14 +105,22 @@ export class AbsClient {
    * which is exactly the key Calliope's own index uses, minus the filename.
    */
   async itemsByRelativePath(libraryId: string): Promise<Map<string, AbsBook>> {
-    const data = await this.request<{ results: AbsLibraryItem[] }>(
+    const listing = await this.request<{ results: Array<{ id: string }> }>(
       `/api/libraries/${libraryId}/items?limit=0`,
     );
+    const ids = (listing.results ?? []).map((item) => item.id);
 
     const byPath = new Map<string, AbsBook>();
-    for (const item of data.results ?? []) {
-      const key = this.relativePathOf(item);
-      if (key) byPath.set(key, toAbsBook(item));
+    for (let i = 0; i < ids.length; i += BATCH_SIZE) {
+      const batch = await this.request<{ libraryItems: AbsLibraryItem[] }>('/api/items/batch/get', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ libraryItemIds: ids.slice(i, i + BATCH_SIZE) }),
+      });
+      for (const item of batch.libraryItems ?? []) {
+        const key = this.relativePathOf(item);
+        if (key) byPath.set(key, toAbsBook(item));
+      }
     }
     return byPath;
   }
@@ -122,7 +145,9 @@ export class AbsClient {
    * have to wonder for a minute whether it worked.
    */
   async rescan(libraryId: string): Promise<void> {
-    await this.request(`/api/libraries/${libraryId}/scan`, { method: 'POST' });
+    // ABS answers 200 with a plain-text "OK" and scans after responding; there
+    // is no JSON to parse, and parsing it would fail every rescan.
+    await this.send(`/api/libraries/${libraryId}/scan`, { method: 'POST' });
   }
 
   /** Rescan every library this client is configured to see. */
@@ -132,9 +157,13 @@ export class AbsClient {
     }
   }
 
-  /** The item's path below the books root, or null when it sits outside it. */
+  /**
+   * The item's path below the books root, or null when it sits outside it.
+   *
+   * Not ABS's `relPath`: that is relative to the ABS *library folder*, which
+   * matches Calliope's key only when the folder is exactly the books root.
+   */
   private relativePathOf(item: AbsLibraryItem): string | null {
-    if (item.relPath) return item.relPath.replace(/^\/+/, '');
     if (!item.path) return null;
     if (!item.path.startsWith(`${this.booksRoot}/`)) return null;
     return item.path.slice(this.booksRoot.length + 1);
@@ -148,11 +177,9 @@ function toAbsBook(item: AbsLibraryItem): AbsBook {
     libraryId: item.libraryId,
     path: item.path ?? '',
     title: meta.title ?? '',
-    authors:
-      meta.authors?.map((a) => a.name ?? '').filter(Boolean) ??
-      (meta.authorName ? [meta.authorName] : []),
+    authors: (meta.authors ?? []).map((a) => a.name ?? '').filter(Boolean),
     series: (meta.series ?? []).map((s) => ({ name: s.name ?? '', sequence: s.sequence ?? null })),
-    narrators: meta.narrators ?? (meta.narratorName ? [meta.narratorName] : []),
+    narrators: meta.narrators ?? [],
     publishedYear: meta.publishedYear ?? null,
     publisher: meta.publisher ?? null,
     description: meta.description ?? null,

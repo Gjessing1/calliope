@@ -2,10 +2,11 @@ import { mkdtemp, mkdir, rm, stat, writeFile, utimes } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import JSZip from 'jszip';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AbsBook, LibraryBook } from '@calliope/core';
 import { emptyMetadata } from '@calliope/core';
 import { bookId, readEpubFile, saveEpubFile } from '@calliope/epub';
+import { AbsClient } from './abs.js';
 import { CoverCache } from './covers.js';
 import { LibraryIndex, ftsQuery } from './index-db.js';
 import { absDrift } from './merge.js';
@@ -384,5 +385,127 @@ describe('absDrift', () => {
 
   it('catches an extra author on one side', () => {
     expect(absDrift(book, { ...abs, authors: ['Franz Kafka', 'Willa Muir'] })).toEqual(['authors']);
+  });
+});
+
+// Response shapes below are ABS 2.33.1's, read from its server source: the
+// library listing is minified, the batch endpoint is expanded, and the scan
+// endpoint answers in plain text.
+describe('AbsClient', () => {
+  const calls: Array<{ url: string; init: RequestInit | undefined }> = [];
+
+  function serve(routes: Record<string, (init?: RequestInit) => Response>): void {
+    vi.stubGlobal('fetch', async (input: URL, init?: RequestInit) => {
+      const url = new URL(input);
+      calls.push({ url: url.pathname + url.search, init });
+      const route = routes[`${init?.method ?? 'GET'} ${url.pathname}`];
+      return route ? route(init) : new Response('Not Found', { status: 404 });
+    });
+  }
+
+  const client = () => new AbsClient({ url: 'http://abs', token: 't', booksRoot: '/books' });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    calls.length = 0;
+  });
+
+  it('reads authors and series from the expanded records, not the listing', async () => {
+    serve({
+      'GET /api/libraries': () =>
+        Response.json({
+          libraries: [
+            { id: 'lib_books', name: 'Ebooks', mediaType: 'book' },
+            { id: 'lib_pods', name: 'Podcasts', mediaType: 'podcast' },
+          ],
+        }),
+      'GET /api/libraries/lib_books/items': () =>
+        Response.json({
+          results: [
+            {
+              id: 'li_1',
+              path: '/books/Good Omens',
+              media: { metadata: { authorName: 'Terry Pratchett, Neil Gaiman', seriesName: '' } },
+            },
+            { id: 'li_2', path: '/elsewhere/Stray', media: { metadata: {} } },
+          ],
+        }),
+      'POST /api/items/batch/get': (init) => {
+        const ids = (JSON.parse(String(init?.body)) as { libraryItemIds: string[] }).libraryItemIds;
+        expect(ids).toEqual(['li_1', 'li_2']);
+        return Response.json({
+          libraryItems: [
+            {
+              id: 'li_1',
+              libraryId: 'lib_books',
+              path: '/books/Good Omens',
+              relPath: 'Good Omens',
+              media: {
+                metadata: {
+                  title: 'Good Omens',
+                  authors: [
+                    { id: 'au_1', name: 'Terry Pratchett' },
+                    { id: 'au_2', name: 'Neil Gaiman' },
+                  ],
+                  series: [{ id: 'se_1', name: 'Discworld-adjacent', sequence: '1' }],
+                  narrators: [],
+                },
+              },
+            },
+            { id: 'li_2', libraryId: 'lib_books', path: '/elsewhere/Stray', media: {} },
+          ],
+        });
+      },
+    });
+
+    const items = await client().allItems();
+
+    // The podcast library is never listed; the item outside the books root has no key.
+    expect([...items.keys()]).toEqual(['Good Omens']);
+    expect(items.get('Good Omens')).toMatchObject({
+      id: 'li_1',
+      authors: ['Terry Pratchett', 'Neil Gaiman'],
+      series: [{ name: 'Discworld-adjacent', sequence: '1' }],
+    });
+    expect(calls.map((c) => c.url)).not.toContain('/api/libraries/lib_pods/items?limit=0');
+  });
+
+  it('keys by the path below the books root, not the ABS library-relative path', async () => {
+    serve({
+      'GET /api/libraries': () =>
+        Response.json({ libraries: [{ id: 'lib', name: 'Fiction', mediaType: 'book' }] }),
+      'GET /api/libraries/lib/items': () => Response.json({ results: [{ id: 'li_1' }] }),
+      // An ABS library rooted at /books/Fiction: relPath drops the Fiction/ that
+      // Calliope's own key carries.
+      'POST /api/items/batch/get': () =>
+        Response.json({
+          libraryItems: [
+            { id: 'li_1', libraryId: 'lib', path: '/books/Fiction/Sult', relPath: 'Sult' },
+          ],
+        }),
+    });
+
+    expect([...(await client().allItems()).keys()]).toEqual(['Fiction/Sult']);
+  });
+
+  it('accepts the plain-text OK that the scan endpoint answers with', async () => {
+    serve({
+      'GET /api/libraries': () =>
+        Response.json({ libraries: [{ id: 'lib', name: 'Ebooks', mediaType: 'book' }] }),
+      'POST /api/libraries/lib/scan': () =>
+        new Response('OK', { status: 200, headers: { 'Content-Type': 'text/plain' } }),
+    });
+
+    await expect(client().rescanAll()).resolves.toBeUndefined();
+  });
+
+  it('reports a non-admin key as a failed rescan', async () => {
+    serve({
+      'GET /api/libraries': () =>
+        Response.json({ libraries: [{ id: 'lib', name: 'Ebooks', mediaType: 'book' }] }),
+      'POST /api/libraries/lib/scan': () => new Response('Forbidden', { status: 403 }),
+    });
+
+    await expect(client().rescanAll()).rejects.toThrow('responded 403');
   });
 });
