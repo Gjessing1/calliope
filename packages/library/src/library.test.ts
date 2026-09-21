@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, rm, writeFile, utimes } from 'node:fs/promises';
+import { mkdtemp, mkdir, rm, stat, writeFile, utimes } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import JSZip from 'jszip';
@@ -133,6 +133,30 @@ describe('scanLibrary', () => {
 
     index.close();
   });
+
+  // Every save replaces the file by rename, so the file's own birth time would
+  // reset on each edit; the folder is what records when the book arrived.
+  it('dates a book by its folder, and backfills rows indexed before that existed', async () => {
+    const books = path.join(root, 'books');
+    const index = new LibraryIndex(':memory:');
+    const covers = new CoverCache(path.join(root, 'covers'));
+    const rel = 'Sult - Knut Hamsun/Sult - Knut Hamsun.epub';
+    await writeEpubAt(rel, 'Sult', 'Knut Hamsun');
+
+    await scanLibrary(books, index, covers);
+    const book = index.get(bookId(rel))!;
+    expect(book.addedAt).toBeGreaterThan(0);
+    // Only checkable where the test filesystem records birth times at all.
+    const born = Math.floor((await stat(path.join(books, 'Sult - Knut Hamsun'))).birthtimeMs);
+    if (born > 0) expect(book.addedAt).toBe(born);
+
+    index.setAddedAt(book.id, 0);
+    const again = await scanLibrary(books, index, covers);
+    expect(again).toMatchObject({ unchanged: 1, updated: 0 });
+    expect(index.get(book.id)?.addedAt).toBe(book.addedAt);
+
+    index.close();
+  });
 });
 
 describe('RevisionStore', () => {
@@ -170,15 +194,51 @@ describe('RevisionStore', () => {
 
     expect(await revisions.list(bookId(relative))).toHaveLength(2);
   });
+
+  it('marks whether each snapshot cover differs from the current one', async () => {
+    const relative = 'Sult/Sult.epub';
+    const file = path.join(root, 'books', relative);
+    await writeEpubAt(relative, 'Sult', 'Knut Hamsun');
+    const revisions = new RevisionStore(path.join(root, 'data', 'revisions'));
+    await revisions.init();
+    const id = bookId(relative);
+    const thumbnail = Buffer.from('jpeg-a');
+
+    await revisions.capture(id, file, {
+      metadata: (await readEpubFile(file)).metadata,
+      hasCover: true,
+      thumbnail,
+    });
+    expect(await revisions.listComparedTo(id, Buffer.from('jpeg-a'))).toMatchObject([
+      { coverChanged: false },
+    ]);
+    expect(await revisions.listComparedTo(id, Buffer.from('jpeg-b'))).toMatchObject([
+      { coverChanged: true },
+    ]);
+    expect(await revisions.listComparedTo(id, null)).toMatchObject([{ coverChanged: true }]);
+
+    await revisions.capture(id, file, {
+      metadata: (await readEpubFile(file)).metadata,
+      hasCover: false,
+    });
+    const [newest] = await revisions.listComparedTo(id, null);
+    expect(newest).toMatchObject({ hasCover: false, coverChanged: false });
+  });
 });
 
 describe('LibraryIndex', () => {
-  const makeBook = (title: string, author: string, series = ''): LibraryBook => ({
+  const makeBook = (
+    title: string,
+    author: string,
+    series = '',
+    times: { addedAt?: number; mtimeMs?: number } = {},
+  ): LibraryBook => ({
     id: bookId(`${title}.epub`),
     path: `${title}.epub`,
     folder: '',
     fileSize: 1000,
-    mtimeMs: 1,
+    mtimeMs: times.mtimeMs ?? 1,
+    addedAt: times.addedAt ?? 1,
     epubVersion: '3.0',
     metadata: {
       ...emptyMetadata(),
@@ -211,6 +271,29 @@ describe('LibraryIndex', () => {
     expect(index.count('dosto')).toBe(1);
     expect(index.count()).toBe(3);
 
+    index.close();
+  });
+
+  it('sorts newest first by arrival or by last modification', () => {
+    const index = new LibraryIndex(':memory:');
+    index.upsert(makeBook('Old but edited', 'A', '', { addedAt: 100, mtimeMs: 900 }));
+    index.upsert(makeBook('New arrival', 'B', '', { addedAt: 500, mtimeMs: 500 }));
+    index.upsert(makeBook('Untouched', 'C', '', { addedAt: 200, mtimeMs: 200 }));
+
+    const titles = (sort: 'added' | 'modified'): string[] =>
+      index.list({ sort }).map((book) => book.metadata.title);
+    expect(titles('added')).toEqual(['New arrival', 'Untouched', 'Old but edited']);
+    expect(titles('modified')).toEqual(['Old but edited', 'New arrival', 'Untouched']);
+    index.close();
+  });
+
+  // The sort comes from a query string and is interpolated into SQL.
+  it('falls back to title order for an unknown sort', () => {
+    const index = new LibraryIndex(':memory:');
+    index.upsert(makeBook('B', 'x'));
+    index.upsert(makeBook('A', 'y'));
+    const sort = 'nonsense; DROP TABLE books' as 'title';
+    expect(index.list({ sort }).map((book) => book.metadata.title)).toEqual(['A', 'B']);
     index.close();
   });
 
@@ -248,6 +331,7 @@ describe('absDrift', () => {
     folder: '',
     fileSize: 1,
     mtimeMs: 1,
+    addedAt: 1,
     epubVersion: '3.0',
     metadata: {
       ...emptyMetadata(),

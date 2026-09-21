@@ -67,6 +67,8 @@ export function App(): JSX.Element {
   const onSaved = (book: MergedBook): void => {
     setBooks((current) => current.map((b) => (b.id === book.id ? book : b)));
     setSelected(book);
+    // A save moves the book in a "recently modified" list; refetch for the order.
+    if (sort === 'modified') void reload();
   };
 
   return (
@@ -104,7 +106,7 @@ export function App(): JSX.Element {
           {search ? `Nothing matches “${search}”.` : 'No books found. Try a scan.'}
         </p>
       ) : (
-        <BookGrid books={books} onSelect={setSelected} />
+        <BookGrid books={books} sort={sort} onSelect={setSelected} />
       )}
 
       {selected && (

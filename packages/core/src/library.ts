@@ -17,6 +17,12 @@ export interface LibraryBook {
   fileSize: number;
   /** File mtime in epoch ms; the scanner re-parses only when this moves. */
   mtimeMs: number;
+  /**
+   * When the book arrived in the library, epoch ms: the birth time of its
+   * folder. Read from the filesystem rather than remembered by the index, so a
+   * rebuilt index gives every book the same date it had before.
+   */
+  addedAt: number;
   /** EPUB package version as declared in the OPF, e.g. `2.0` or `3.0`. */
   epubVersion: string;
   metadata: BookMetadata;
@@ -85,4 +91,9 @@ export interface BookRevision {
   bytes: number;
   metadata: BookMetadata;
   hasCover: boolean;
+  /**
+   * Whether this snapshot's cover differs from the book's current one. Set only
+   * by the history listing — the one place that has both sides to compare.
+   */
+  coverChanged?: boolean;
 }

@@ -71,6 +71,22 @@ const MIGRATIONS: Array<(db: DatabaseSync) => void> = [
       );
     `);
   },
+
+  // v3 — sort by when a book arrived and when its file last changed. The old
+  // "recently scanned" order is gone: every save and re-parse moves scanned_at,
+  // so it meant nothing a person would sort by.
+  //
+  // added_at is 0 on existing rows until the next scan fills it in. The scan
+  // backfills unchanged books with a stat of their folder instead of forcing a
+  // re-parse of the whole library.
+  (db) => {
+    db.exec(`
+      ALTER TABLE books ADD COLUMN added_at INTEGER NOT NULL DEFAULT 0;
+      DROP INDEX IF EXISTS books_scanned_at;
+      CREATE INDEX books_added_at ON books (added_at);
+      CREATE INDEX books_mtime_ms ON books (mtime_ms);
+    `);
+  },
 ];
 
 /** Bring a database up to the current schema. Safe to call on every startup. */

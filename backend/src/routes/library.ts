@@ -2,6 +2,7 @@ import { stat } from 'node:fs/promises';
 import path from 'node:path';
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import type { BookMetadata, MetadataUpdate } from '@calliope/core';
+import type { LibrarySort } from '@calliope/library';
 import {
   getCoverBuffer,
   normalizeMetadata,
@@ -17,7 +18,7 @@ import { isAllowedCoverUrl } from './lookup.js';
 
 interface ListQuery {
   search?: string;
-  sort?: 'title' | 'author' | 'series' | 'added';
+  sort?: LibrarySort;
   limit?: string;
   offset?: string;
 }
@@ -127,7 +128,12 @@ export function libraryRoutes(app: FastifyInstance, state: AppState): void {
 
   app.get<{ Params: { id: string } }>('/api/books/:id/revisions', async (req, reply) => {
     if (!state.index.get(req.params.id)) return reply.code(404).send({ error: 'No such book' });
-    return { revisions: await state.revisions.list(req.params.id) };
+    return {
+      revisions: await state.revisions.listComparedTo(
+        req.params.id,
+        await state.covers.get(req.params.id),
+      ),
+    };
   });
 
   app.get<{ Params: { id: string; revisionId: string } }>(

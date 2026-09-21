@@ -132,7 +132,10 @@ export const api = {
     return request<{ covers: CoverCandidate[] }>(`/api/lookup/covers?${params}`);
   },
 
-  coverUrl: (id: string) => `${API_ORIGIN}/api/books/${id}/cover`,
+  // `version` is the file's mtime: the URL has to change when the cover does, or
+  // an <img> that is already showing it never refetches after a save.
+  coverUrl: (id: string, version?: number) =>
+    `${API_ORIGIN}/api/books/${id}/cover${version === undefined ? '' : `?v=${version}`}`,
   revisionCoverUrl: (id: string, revisionId: string) =>
     `${API_ORIGIN}/api/books/${id}/revisions/${revisionId}/cover`,
   proxiedCover: (url: string) =>

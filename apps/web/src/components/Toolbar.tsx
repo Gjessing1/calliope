@@ -30,7 +30,8 @@ export function Toolbar({
         <option value="title">Title</option>
         <option value="author">Author</option>
         <option value="series">Series</option>
-        <option value="added">Recently scanned</option>
+        <option value="added">Recently added</option>
+        <option value="modified">Recently modified</option>
       </select>
       <button type="button" onClick={() => void onScan()} disabled={scanning}>
         {scanning ? 'Scanning…' : 'Rescan'}

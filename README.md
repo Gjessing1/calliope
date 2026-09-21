@@ -17,14 +17,17 @@ lookup. BookPrep edits one uploaded book and hands it back. Calliope edits the l
 
 ## Features
 
-- **The whole library at a glance** — covers, titles, authors, series; search across all of them.
+- **The whole library at a glance** — covers, titles, authors, series; search across all of them,
+  sort by title, author, series, recently added or recently modified.
 - **In-place metadata editing** — title, subtitle, authors and their roles, contributors, series,
   ISBN, language, publisher, date, description, subjects.
 - **Standards-compliant writes** — EPUB 2 files get EPUB 2 metadata, EPUB 3 files get EPUB 3
   metadata, and the version is never upgraded. Identifiers and vendor metadata the tool does not
   understand are preserved exactly.
-- **Reviewed, recoverable saves** — a before/after confirmation precedes every write, the current
-  EPUB is retained in a bounded private history, and any previous file or cover can be restored.
+- **Reviewed, recoverable saves** — every staged change is marked in the form and can be reverted
+  field by field or discarded outright; a before/after confirmation precedes every write; the
+  current EPUB is retained in a bounded private history, where each entry shows what restoring it
+  would change before any previous file or cover is restored.
 - **Atomic saves** — the rebuilt file is written beside the original and renamed over it, so a
   failure never leaves a truncated book.
 - **Metadata lookup** — ISBN and title search across Google Books, Open Library and Apple Books,

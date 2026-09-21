@@ -8,6 +8,7 @@ interface BookRow {
   folder: string;
   file_size: number;
   mtime_ms: number;
+  added_at: number;
   epub_version: string;
   metadata: string;
   has_cover: number;
@@ -21,6 +22,7 @@ function toBook(row: BookRow): LibraryBook {
     folder: row.folder,
     fileSize: row.file_size,
     mtimeMs: row.mtime_ms,
+    addedAt: row.added_at,
     epubVersion: row.epub_version,
     metadata: JSON.parse(row.metadata) as BookMetadata,
     hasCover: row.has_cover === 1,
@@ -38,10 +40,12 @@ function toBook(row: BookRow): LibraryBook {
 const asRow = <T>(value: unknown): T | null => (value as T | undefined) ?? null;
 const asRows = <T>(values: unknown): T[] => values as T[];
 
+export type LibrarySort = 'title' | 'author' | 'series' | 'added' | 'modified';
+
 export interface ListOptions {
   /** Free-text query across title, author, series and subjects. */
   search?: string;
-  sort?: 'title' | 'author' | 'series' | 'added';
+  sort?: LibrarySort;
   limit?: number;
   offset?: number;
 }
@@ -71,11 +75,12 @@ export class LibraryIndex {
   upsert(book: LibraryBook): void {
     this.db
       .prepare(
-        `INSERT INTO books (id, path, folder, file_size, mtime_ms, epub_version, metadata, has_cover, scanned_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO books (id, path, folder, file_size, mtime_ms, added_at, epub_version, metadata, has_cover, scanned_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(id) DO UPDATE SET
            path = excluded.path, folder = excluded.folder, file_size = excluded.file_size,
-           mtime_ms = excluded.mtime_ms, epub_version = excluded.epub_version,
+           mtime_ms = excluded.mtime_ms, added_at = excluded.added_at,
+           epub_version = excluded.epub_version,
            metadata = excluded.metadata, has_cover = excluded.has_cover,
            scanned_at = excluded.scanned_at`,
       )
@@ -85,6 +90,7 @@ export class LibraryIndex {
         book.folder,
         book.fileSize,
         book.mtimeMs,
+        book.addedAt,
         book.epubVersion,
         JSON.stringify(book.metadata),
         book.hasCover ? 1 : 0,
@@ -125,13 +131,25 @@ export class LibraryIndex {
     this.db.prepare('DELETE FROM books_fts WHERE book_id = ?').run(id);
   }
 
-  allPaths(): Map<string, { id: string; mtimeMs: number; fileSize: number }> {
-    const rows = asRows<{ id: string; path: string; mtime_ms: number; file_size: number }>(
-      this.db.prepare('SELECT id, path, mtime_ms, file_size FROM books').all(),
-    );
+  allPaths(): Map<string, { id: string; mtimeMs: number; fileSize: number; addedAt: number }> {
+    const rows = asRows<{
+      id: string;
+      path: string;
+      mtime_ms: number;
+      file_size: number;
+      added_at: number;
+    }>(this.db.prepare('SELECT id, path, mtime_ms, file_size, added_at FROM books').all());
     return new Map(
-      rows.map((r) => [r.path, { id: r.id, mtimeMs: r.mtime_ms, fileSize: r.file_size }]),
+      rows.map((r) => [
+        r.path,
+        { id: r.id, mtimeMs: r.mtime_ms, fileSize: r.file_size, addedAt: r.added_at },
+      ]),
     );
+  }
+
+  /** Fill in an arrival date without re-parsing the book (see schema v3). */
+  setAddedAt(id: string, addedAt: number): void {
+    this.db.prepare('UPDATE books SET added_at = ? WHERE id = ?').run(addedAt, id);
   }
 
   count(search?: string): number {
@@ -150,15 +168,22 @@ export class LibraryIndex {
   list(options: ListOptions = {}): LibraryBook[] {
     const { search, sort = 'title', limit = 200, offset = 0 } = options;
 
-    const order = {
-      // json_extract keeps the sort in SQLite rather than pulling every row into
-      // JS to sort it, which is the whole reason the index exists.
-      title: "json_extract(metadata, '$.title') COLLATE NOCASE",
+    // json_extract keeps the sort in SQLite rather than pulling every row into
+    // JS to sort it, which is the whole reason the index exists.
+    const byTitle = "json_extract(metadata, '$.title') COLLATE NOCASE";
+    const orders: Record<LibrarySort, string> = {
+      title: byTitle,
       author: "json_extract(metadata, '$.author') COLLATE NOCASE",
       series:
         "json_extract(metadata, '$.series') COLLATE NOCASE, json_extract(metadata, '$.seriesIndex')",
-      added: 'scanned_at DESC',
-    }[sort];
+      // Newest first; title breaks ties so a batch copied in together keeps a
+      // stable, readable order.
+      added: `added_at DESC, ${byTitle}`,
+      modified: `mtime_ms DESC, ${byTitle}`,
+    };
+    // The sort arrives straight from a query string and is interpolated into
+    // SQL, so anything unrecognised falls back to title rather than through.
+    const order = orders[sort] ?? byTitle;
 
     if (search?.trim()) {
       const rows = asRows<BookRow>(

@@ -1,3 +1,4 @@
+import type { Stats } from 'node:fs';
 import { readdir, stat } from 'node:fs/promises';
 import path from 'node:path';
 import type { LibraryBook, ScanSummary } from '@calliope/core';
@@ -28,6 +29,30 @@ export async function* findEpubs(root: string, sub = ''): AsyncGenerator<string>
       yield relative;
     }
   }
+}
+
+/**
+ * When a book arrived in the library, from the filesystem alone.
+ *
+ * The birth time of the book's folder, not of the file: every Calliope save
+ * replaces the file by rename, which gives it a new inode and a new birth time,
+ * while the folder is created once, when the book is added. A book sitting at
+ * the library root has no folder of its own and falls back to the file.
+ *
+ * Node reports a birth time of 0 where the filesystem records none; the file's
+ * mtime is the closest honest substitute there.
+ */
+async function arrivedAt(root: string, relativePath: string, file: Stats): Promise<number> {
+  const folder = path.dirname(relativePath);
+  let born = file.birthtimeMs;
+  if (folder !== '.') {
+    try {
+      born = (await stat(path.join(root, folder))).birthtimeMs;
+    } catch {
+      // Raced with a move or delete; the file's own time is still meaningful.
+    }
+  }
+  return Math.floor(born > 0 ? born : file.mtimeMs);
 }
 
 export interface ScanOptions {
@@ -92,6 +117,10 @@ export async function scanLibrary(
       existing.mtimeMs === Math.floor(stats.mtimeMs) &&
       existing.fileSize === stats.size
     ) {
+      // Rows from before the index recorded arrival dates (schema v3).
+      if (existing.addedAt === 0) {
+        index.setAddedAt(existing.id, await arrivedAt(root, relativePath, stats));
+      }
       summary.unchanged++;
       continue;
     }
@@ -108,6 +137,7 @@ export async function scanLibrary(
         folder: path.dirname(relativePath) === '.' ? '' : path.dirname(relativePath),
         fileSize: stats.size,
         mtimeMs: Math.floor(stats.mtimeMs),
+        addedAt: await arrivedAt(root, relativePath, stats),
         epubVersion: version,
         metadata,
         hasCover,

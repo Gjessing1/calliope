@@ -104,6 +104,31 @@ export class RevisionStore {
       .sort((a, b) => b.createdAt - a.createdAt);
   }
 
+  /**
+   * The history, each entry marked with whether its cover differs from the
+   * book's current one — so the editor can say "cover changed" rather than show
+   * two thumbnails and leave the user to squint.
+   *
+   * Compared as thumbnails, not embedded images: both sides come out of the
+   * same `makeThumbnail` pipeline, so an unchanged cover gives byte-identical
+   * JPEGs, and a thumbnail is what is already on disk for both. A sharp upgrade
+   * between the two could make an unchanged cover read as changed; it cannot
+   * make a changed one read as unchanged.
+   */
+  async listComparedTo(bookId: string, currentCover: Buffer | null): Promise<BookRevision[]> {
+    const revisions = await this.list(bookId);
+    return Promise.all(
+      revisions.map(async (revision) => {
+        const cover = revision.hasCover
+          ? await this.cover(bookId, revision.id).catch(() => null)
+          : null;
+        const coverChanged =
+          cover && currentCover ? !cover.equals(currentCover) : cover !== currentCover;
+        return { ...revision, coverChanged };
+      }),
+    );
+  }
+
   async read(bookId: string, revisionId: string): Promise<Buffer | null> {
     const revisionPath = this.revisionPath(bookId, revisionId);
     if (!revisionPath) return null;
