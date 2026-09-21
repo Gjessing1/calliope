@@ -4,16 +4,17 @@ import { mkdir, readdir, readFile, rename, stat, unlink, writeFile } from 'node:
 import path from 'node:path';
 import JSZip from 'jszip';
 
-const [sourceArg, dataArg, runtimeVersion, bundleId] = process.argv.slice(2);
+const [sourceArg, dataArg, runtimeVersion, bundleId, apiOrigin] = process.argv.slice(2);
 if (
   !sourceArg ||
   !dataArg ||
   !/^\d+$/.test(runtimeVersion ?? '') ||
   !bundleId ||
-  !/^[0-9A-Za-z._-]+$/.test(bundleId)
+  !/^[0-9A-Za-z._-]+$/.test(bundleId) ||
+  !/^https:\/\/[^/]+$/.test(apiOrigin ?? '')
 ) {
   console.error(
-    'usage: publish-web-update.mjs <web-dist> <data-dir> <runtime-version> <bundle-id>',
+    'usage: publish-web-update.mjs <web-dist> <data-dir> <runtime-version> <bundle-id> <api-origin>',
   );
   process.exit(1);
 }
@@ -32,6 +33,19 @@ async function addTree(dir, prefix = '') {
 }
 
 await addTree(source);
+
+// The phone runs this bundle at https://localhost, so every request it makes
+// has to name the server. The browser build carries no origin; published by
+// mistake, it would point the app at its own WebView on the next restart.
+const scripts = await Promise.all(
+  Object.values(zip.files)
+    .filter((entry) => !entry.dir && entry.name.endsWith('.js'))
+    .map((entry) => entry.async('string')),
+);
+if (!scripts.some((code) => code.includes(apiOrigin))) {
+  console.error(`${source} does not carry the API origin ${apiOrigin}; refusing to publish it`);
+  process.exit(1);
+}
 const bytes = await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' });
 await mkdir(updateDir, { recursive: true });
 const file = `bundle-${bundleId}.zip`;

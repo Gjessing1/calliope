@@ -22,6 +22,9 @@ env:
   IMAGE: git.gjessing.io/gjessing1/calliope
   # Push name — straight to Forgejo's host-published port, avoiding Caddy.
   PUSH_IMAGE: localhost:3000/gjessing1/calliope
+  # Baked into the Android OTA bundle. Must equal the CALLIOPE_API_ORIGIN the
+  # installed APK was built with (apps/android/build-apk.sh).
+  ANDROID_API_ORIGIN: https://books.gjessing.io
 
 jobs:
   # Build, push and deploy in ONE job. A separate `needs:` deploy job would have
@@ -58,6 +61,7 @@ jobs:
           SHA_TAG="${GITHUB_SHA::7}"
           docker build --progress=plain -f backend/Dockerfile \
             --build-arg GIT_SHA="$GITHUB_SHA" \
+            --build-arg ANDROID_API_ORIGIN="$ANDROID_API_ORIGIN" \
             -t "$IMAGE:latest" -t "$IMAGE:$SHA_TAG" \
             -t "$PUSH_IMAGE:latest" -t "$PUSH_IMAGE:$SHA_TAG" .
 
@@ -123,4 +127,4 @@ jobs:
             -v /mnt/data/calliope:/data \
             "$IMAGE:$SHA_TAG" \
             node scripts/publish-web-update.mjs \
-              /app/backend/public /data "$VERSION_CODE" "$GITHUB_SHA"
+              /app/native-web /data "$VERSION_CODE" "$GITHUB_SHA" "$ANDROID_API_ORIGIN"

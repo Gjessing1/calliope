@@ -27,6 +27,10 @@ RUN --mount=type=cache,target=/root/.npm npm ci
 
 FROM deps AS gate
 ARG GIT_SHA=dev
+# The server the Android APK talks to. The browser build is same-origin and
+# must not carry it; the Android OTA bundle runs at https://localhost and
+# reaches nothing without it.
+ARG ANDROID_API_ORIGIN=
 ENV VITE_APP_BUNDLE_ID=$GIT_SHA
 COPY . .
 RUN npm run format:check \
@@ -34,6 +38,15 @@ RUN npm run format:check \
  && npm run build \
  && npm run typecheck \
  && npm test
+# The same source, built again for the Android OTA channel. Empty when no origin
+# was given (a local build), and publish-web-update.mjs refuses to publish a
+# bundle that does not carry the origin: publishing the browser build to phones
+# once pointed every request they made at their own WebView.
+RUN mkdir -p /app/native-web \
+ && if [ -n "$ANDROID_API_ORIGIN" ]; then \
+      cd apps/web && VITE_API_ORIGIN="$ANDROID_API_ORIGIN" \
+        npx vite build --outDir /app/native-web --emptyOutDir; \
+    fi
 
 # Reinstall without dev dependencies for the runtime layer. Done from the gate
 # stage so the built dist/ directories come along with it.
@@ -65,6 +78,8 @@ COPY --from=gate /app/scripts/publish-web-update.mjs ./scripts/publish-web-updat
 
 # The built web app, served same-origin by the backend.
 COPY --from=gate /app/apps/web/dist ./backend/public
+# Its Android build, published to the OTA channel by CI and never served.
+COPY --from=gate /app/native-web ./native-web
 
 ENV GIT_SHA=$GIT_SHA
 ENV PORT=3008
