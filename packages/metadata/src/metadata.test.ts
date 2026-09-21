@@ -1,6 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanISBN, convertISBN10to13, isISBN10, isISBN13 } from './isbn.js';
-import { deduplicateResults } from './lookup.js';
+import { deduplicateResults, searchByTitle } from './lookup.js';
+
+afterEach(() => vi.unstubAllGlobals());
 
 describe('isbn', () => {
   it('cleans separators and keeps a trailing X', () => {
@@ -45,5 +47,28 @@ describe('deduplicateResults', () => {
       { title: 'Sult', author: 'Sverre Lyngstad', isbn: null },
     ]);
     expect(out).toHaveLength(2);
+  });
+});
+
+describe('edition search', () => {
+  it('uses the author to narrow every provider query', async () => {
+    const urls: URL[] = [];
+    vi.stubGlobal('fetch', async (input: string | URL) => {
+      const url = new URL(input);
+      urls.push(url);
+      if (url.hostname === 'www.googleapis.com') return Response.json({ items: [] });
+      if (url.hostname === 'openlibrary.org') return Response.json({ docs: [] });
+      return Response.json({ results: [] });
+    });
+
+    await searchByTitle('Sult', 'Knut Hamsun');
+
+    const google = urls.find(({ hostname }) => hostname === 'www.googleapis.com')!;
+    const openLibrary = urls.find(({ hostname }) => hostname === 'openlibrary.org')!;
+    const apple = urls.find(({ hostname }) => hostname === 'itunes.apple.com')!;
+    expect(google.searchParams.get('q')).toBe('intitle:Sult inauthor:Knut Hamsun');
+    expect(openLibrary.searchParams.get('title')).toBe('Sult');
+    expect(openLibrary.searchParams.get('author')).toBe('Knut Hamsun');
+    expect(apple.searchParams.get('term')).toBe('Sult Knut Hamsun');
   });
 });

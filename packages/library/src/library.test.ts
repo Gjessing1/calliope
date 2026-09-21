@@ -8,7 +8,6 @@ import { emptyMetadata } from '@calliope/core';
 import { bookId, readEpubFile, saveEpubFile } from '@calliope/epub';
 import { AbsClient } from './abs.js';
 import { CoverCache } from './covers.js';
-import { libraryHealth } from './health.js';
 import { LibraryIndex, ftsQuery } from './index-db.js';
 import { absDifferences, absDrift } from './merge.js';
 import { absMetadataPatch } from './abs-update.js';
@@ -295,36 +294,6 @@ describe('LibraryIndex', () => {
     expect(index.count()).toBe(3);
 
     index.close();
-  });
-
-  it('derives missing, filename-like and duplicate-ISBN health issues', () => {
-    const missing = makeBook('Unknown book', 'Someone');
-    const filename = makeBook('The_Trial_-_Franz_Kafka', 'Franz Kafka');
-    filename.path = 'Kafka/The_Trial_-_Franz_Kafka.epub';
-    filename.metadata.identifier = '0-306-40615-2';
-    filename.metadata.language = 'en';
-    filename.hasCover = true;
-    const duplicate = makeBook('Another edition', 'Another Author');
-    duplicate.metadata.identifier = '9780306406157';
-    duplicate.metadata.language = 'en';
-    duplicate.hasCover = true;
-    const healthy = makeBook('Sult', 'Knut Hamsun');
-    healthy.metadata.identifier = '9780141180176';
-    healthy.metadata.language = 'nb';
-    healthy.hasCover = true;
-
-    const health = libraryHealth([missing, filename, duplicate, healthy]);
-    expect(health.get(missing.id)?.map(({ code }) => code)).toEqual([
-      'missing-isbn',
-      'missing-cover',
-      'missing-language',
-    ]);
-    expect(health.get(filename.id)?.map(({ code }) => code)).toEqual([
-      'filename-title',
-      'duplicate-isbn',
-    ]);
-    expect(health.get(duplicate.id)?.map(({ code }) => code)).toEqual(['duplicate-isbn']);
-    expect(health.get(healthy.id)).toEqual([]);
   });
 
   it('sorts newest first by arrival or by last modification', () => {

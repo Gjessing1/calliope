@@ -27,10 +27,14 @@ function highResArtwork(url: string): string {
  * Apple track id is worse than a book with no ISBN, because every later lookup
  * keyed on it silently returns the wrong edition.
  */
-export async function searchByTitle(title: string): Promise<ProviderResult<MetadataCandidate[]>> {
+export async function searchByTitle(
+  title: string,
+  author?: string,
+): Promise<ProviderResult<MetadataCandidate[]>> {
   try {
+    const term = [title, author].filter(Boolean).join(' ');
     const res = await fetchWithTimeout(
-      `https://itunes.apple.com/search?term=${encodeURIComponent(title)}&media=ebook&entity=ebook&limit=20`,
+      `https://itunes.apple.com/search?term=${encodeURIComponent(term)}&media=ebook&entity=ebook&limit=20`,
       SOURCE,
     );
     if (!res.ok) return fail(classifyHttpError(res, SOURCE));

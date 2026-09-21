@@ -95,8 +95,6 @@ export const api = {
       sort?: string;
       /** Only books whose file and Audiobookshelf disagree. */
       drift?: boolean;
-      /** Only books with missing or suspicious file metadata. */
-      health?: boolean;
       limit?: number;
       offset?: number;
     } = {},
@@ -181,8 +179,11 @@ export const api = {
   lookupIsbn: (isbn: string) =>
     request<LookupResult>(`/api/lookup/isbn?isbn=${encodeURIComponent(isbn)}`),
 
-  searchTitle: (title: string) =>
-    request<LookupResult>(`/api/lookup/title?title=${encodeURIComponent(title)}`),
+  searchTitle: (title: string, author?: string) => {
+    const params = new URLSearchParams({ title });
+    if (author) params.set('author', author);
+    return request<LookupResult>(`/api/lookup/title?${params}`);
+  },
 
   covers: (query: string, isbn?: string) => {
     const params = new URLSearchParams({ query });

@@ -11,10 +11,6 @@ interface ToolbarProps {
   driftCount: number;
   driftOnly: boolean;
   onDriftOnly: (on: boolean) => void;
-  /** Books with at least one file-derived health issue. */
-  healthCount: number;
-  healthOnly: boolean;
-  onHealthOnly: (on: boolean) => void;
   onSearch: (value: string) => void;
   onView: (value: LibraryView) => void;
   onScan: () => void | Promise<void>;
@@ -30,9 +26,6 @@ export function Toolbar({
   driftCount,
   driftOnly,
   onDriftOnly,
-  healthCount,
-  healthOnly,
-  onHealthOnly,
   onSearch,
   onView,
   onScan,
@@ -69,19 +62,6 @@ export function Toolbar({
         >
           Differs<span className="full"> from Audiobookshelf</span>
           <span className="filter-count">{driftCount}</span>
-        </button>
-      )}
-      {(healthCount > 0 || healthOnly) && (
-        <button
-          type="button"
-          className={healthOnly ? 'filter on' : 'filter'}
-          aria-pressed={healthOnly}
-          aria-label={`Needs attention: ${healthCount} books`}
-          onClick={() => onHealthOnly(!healthOnly)}
-          title="Show only books with missing or suspicious file metadata"
-        >
-          Needs attention
-          <span className="filter-count">{healthCount}</span>
         </button>
       )}
       <button

@@ -67,12 +67,14 @@ export async function lookupByISBN(
   }
 }
 
-export async function searchByTitle(title: string): Promise<ProviderResult<MetadataCandidate[]>> {
+export async function searchByTitle(
+  title: string,
+  author?: string,
+): Promise<ProviderResult<MetadataCandidate[]>> {
   try {
-    const res = await fetchWithTimeout(
-      `https://openlibrary.org/search.json?q=${encodeURIComponent(title)}&limit=20`,
-      SOURCE,
-    );
+    const params = new URLSearchParams({ title, limit: '20' });
+    if (author) params.set('author', author);
+    const res = await fetchWithTimeout(`https://openlibrary.org/search.json?${params}`, SOURCE);
     if (!res.ok) return fail(classifyHttpError(res, SOURCE));
 
     const data = (await res.json()) as { docs?: OpenLibraryDoc[] };

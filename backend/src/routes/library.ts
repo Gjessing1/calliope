@@ -14,8 +14,6 @@ interface ListQuery {
   sort?: LibrarySort;
   /** `true`: only books whose file and Audiobookshelf disagree. */
   drift?: string;
-  /** `true`: only books with at least one file-derived health issue. */
-  health?: string;
   limit?: string;
   offset?: string;
 }
@@ -52,28 +50,21 @@ export function libraryRoutes(app: FastifyInstance, state: AppState): void {
   app.get<{ Querystring: ListQuery }>('/api/library', async (req) => {
     const limit = Math.min(Number(req.query.limit ?? 200), 1000);
     const offset = Number(req.query.offset ?? 0);
-    const health = state.health();
-    const driftOnly = req.query.drift === 'true';
-    const healthOnly = req.query.health === 'true';
 
-    // Drift and health are derived rather than stored, so either filter walks
-    // the matching books. A personal library is small enough for that to cost
-    // milliseconds, and duplicate-ISBN health must see the complete library.
-    if (driftOnly || healthOnly) {
-      const matching = state.index
+    // Disagreement with ABS is computed per book at merge time, not stored, so
+    // this filter walks the matching books. A personal library is small enough
+    // for that to cost milliseconds.
+    if (req.query.drift === 'true') {
+      const differing = state.index
         .list({ search: req.query.search, sort: req.query.sort ?? 'title', limit: 100_000 })
-        .map((book) => state.merge(book, health.get(book.id) ?? []))
-        .filter(
-          (book) =>
-            (!driftOnly || book.absDrift.length > 0) &&
-            (!healthOnly || book.healthIssues.length > 0),
-        );
+        .map((book) => state.merge(book))
+        .filter((book) => book.absDrift.length > 0);
       return {
-        total: matching.length,
+        total: differing.length,
         limit,
         offset,
         scanning: state.isScanning,
-        books: matching.slice(offset, offset + limit),
+        books: differing.slice(offset, offset + limit),
       };
     }
 
@@ -89,7 +80,7 @@ export function libraryRoutes(app: FastifyInstance, state: AppState): void {
       limit,
       offset,
       scanning: state.isScanning,
-      books: books.map((book) => state.merge(book, health.get(book.id) ?? [])),
+      books: books.map((book) => state.merge(book)),
     };
   });
 

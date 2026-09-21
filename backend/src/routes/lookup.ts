@@ -36,11 +36,14 @@ export function lookupRoutes(app: FastifyInstance): void {
     return lookupISBN(isbn);
   });
 
-  app.get<{ Querystring: { title?: string } }>('/api/lookup/title', async (req, reply) => {
-    const title = req.query.title?.trim();
-    if (!title) return reply.code(400).send({ error: 'title is required' });
-    return searchByTitle(title);
-  });
+  app.get<{ Querystring: { title?: string; author?: string } }>(
+    '/api/lookup/title',
+    async (req, reply) => {
+      const title = req.query.title?.trim();
+      if (!title) return reply.code(400).send({ error: 'title is required' });
+      return searchByTitle(title, req.query.author?.trim());
+    },
+  );
 
   app.get<{ Querystring: { query?: string; isbn?: string } }>(
     '/api/lookup/covers',

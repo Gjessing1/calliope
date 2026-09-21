@@ -163,6 +163,7 @@ export function BookEditor({
 }: BookEditorProps): JSX.Element {
   const [form, setForm] = useState<MetadataUpdate>(() => metadataForm(book.metadata));
   const [candidates, setCandidates] = useState<MetadataCandidate[]>([]);
+  const [lookupKind, setLookupKind] = useState<'isbn' | 'editions' | null>(null);
   const [appliedMatch, setAppliedMatch] = useState<number | null>(null);
   const [matchBase, setMatchBase] = useState<MatchBase | null>(null);
   const [covers, setCovers] = useState<CoverCandidate[]>([]);
@@ -228,6 +229,7 @@ export function BookEditor({
     setCoverChoice(null);
     setMatchBase(null);
     setAppliedMatch(null);
+    setLookupKind(null);
     setCandidates([]);
     setCovers([]);
     setNormalization([]);
@@ -235,9 +237,12 @@ export function BookEditor({
 
   const lookup = (): Promise<void> =>
     run('lookup', async () => {
-      const result = form.identifier
-        ? await api.lookupIsbn(form.identifier)
-        : await api.searchTitle(form.title ?? '');
+      const identifier = form.identifier?.trim();
+      const author = authorObjects(form.authors)[0]?.name;
+      const result = identifier
+        ? await api.lookupIsbn(identifier)
+        : await api.searchTitle(form.title ?? '', author);
+      setLookupKind(identifier ? 'isbn' : 'editions');
       setCandidates(result.candidates);
       setAppliedMatch(null);
       setMatchBase(null);
@@ -345,6 +350,7 @@ export function BookEditor({
     setCandidates([]);
     setAppliedMatch(null);
     setMatchBase(null);
+    setLookupKind(null);
   };
 
   const updateAuthor = (index: number, update: Partial<Author>): void => {
@@ -543,20 +549,6 @@ export function BookEditor({
         </header>
 
         <div className="sheet-body">
-          {book.healthIssues.length > 0 && (
-            <section className="panel health" aria-labelledby="health-title">
-              <div className="panel-head">
-                <h3 id="health-title">Needs metadata attention</h3>
-              </div>
-              <ul>
-                {book.healthIssues.map((issue) => (
-                  <li key={issue.code}>
-                    <strong>{issue.label}</strong> — {issue.detail}
-                  </li>
-                ))}
-              </ul>
-            </section>
-          )}
           {differences.length > 0 && (
             <section className="panel drift" aria-labelledby="drift-title">
               <div className="panel-head">
@@ -665,7 +657,7 @@ export function BookEditor({
                 ? 'Looking up…'
                 : form.identifier
                   ? 'Look up ISBN'
-                  : 'Search title'}
+                  : 'Find editions'}
             </button>
             <button
               type="button"
@@ -679,7 +671,7 @@ export function BookEditor({
           {candidates.length > 0 && (
             <section className="panel candidates">
               <div className="panel-head">
-                <h3>Matches</h3>
+                <h3>{lookupKind === 'editions' ? 'Possible editions' : 'Matches'}</h3>
                 {matchBase && (
                   <button type="button" className="quiet" onClick={undoMatch}>
                     Undo match
@@ -690,8 +682,9 @@ export function BookEditor({
                 </button>
               </div>
               <p className="hint">
-                Picking a match fills the draft below; pick another to swap it. Nothing is written
-                until you save.
+                {lookupKind === 'editions'
+                  ? 'An ISBN is optional for an ebook. These results can help identify the edition when you want one; publisher and date distinguish editions that share a title.'
+                  : 'Picking a match fills the draft below; pick another to swap it. Nothing is written until you save.'}
               </p>
               <ul>
                 {candidates.map((candidate, index) => (
@@ -704,8 +697,15 @@ export function BookEditor({
                     >
                       <strong>{candidate.title}</strong>
                       <span>
-                        {candidate.author ?? '—'} · {candidate.source}
-                        {candidate.isbn ? ` · ${candidate.isbn}` : ' · no ISBN'}
+                        {[
+                          candidate.author,
+                          candidate.publisher,
+                          candidate.date,
+                          candidate.isbn ? `ISBN ${candidate.isbn}` : null,
+                          candidate.source,
+                        ]
+                          .filter(Boolean)
+                          .join(' · ')}
                       </span>
                       {index === appliedMatch && <em className="tag">In draft</em>}
                     </button>

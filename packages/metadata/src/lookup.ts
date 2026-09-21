@@ -99,14 +99,14 @@ export async function lookupISBN(isbn: string): Promise<LookupResult> {
  * Books last, because Apple has no ISBN but the best artwork — useful to reach,
  * never the thing to pick by accident.
  */
-export async function searchByTitle(title: string): Promise<LookupResult> {
+export async function searchByTitle(title: string, author?: string): Promise<LookupResult> {
   if (!title) return { candidates: [], errors: [] };
 
   const errors: LookupError[] = [];
   const [googleResults, openLibResults, itunesResults] = await Promise.all([
-    google.searchByTitle(title),
-    openLibrary.searchByTitle(title),
-    itunes.searchByTitle(title),
+    google.searchByTitle(title, author),
+    openLibrary.searchByTitle(title, author),
+    itunes.searchByTitle(title, author),
   ]);
 
   const reliable: MetadataCandidate[] = [];

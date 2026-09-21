@@ -4,7 +4,6 @@ import {
   AbsClient,
   CoverCache,
   LibraryIndex,
-  libraryHealth,
   mergeAbs,
   RevisionStore,
   scanLibrary,
@@ -114,16 +113,8 @@ export class AppState {
   }
 
   /** Attach the cached ABS record and drift report to a book. */
-  merge(
-    book: Parameters<typeof mergeAbs>[0],
-    health = this.health().get(book.id) ?? [],
-  ): MergedBook {
-    return mergeAbs(book, this.abs ? this.index.getAbs(book.id) : null, health);
-  }
-
-  /** Health is derived from the complete library so duplicate ISBNs survive filters. */
-  health(): ReturnType<typeof libraryHealth> {
-    return libraryHealth(this.index.list({ limit: Number.MAX_SAFE_INTEGER }));
+  merge(book: Parameters<typeof mergeAbs>[0]): MergedBook {
+    return mergeAbs(book, this.abs ? this.index.getAbs(book.id) : null);
   }
 
   close(): void {

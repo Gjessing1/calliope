@@ -23,7 +23,6 @@ const book = (id: string, author = '', series = ''): MergedBook => ({
   abs: null,
   absDrift: [],
   absDifferences: [],
-  healthIssues: [],
 });
 
 describe('groupBooks', () => {

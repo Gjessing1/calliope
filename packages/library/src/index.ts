@@ -12,4 +12,3 @@ export { absMetadataPatch } from './abs-update.js';
 export type { AbsField, AbsMetadataPatch } from './abs-update.js';
 export { planBatch } from './batch.js';
 export type { PlannedBook } from './batch.js';
-export { libraryHealth } from './health.js';
