@@ -1,0 +1,20 @@
+{
+  "name": "@calliope/metadata",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Look up book metadata and covers from public sources — ported from epub-editor.",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -b",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@calliope/core": "*"
+  }
+}

@@ -1,0 +1,27 @@
+import type { FastifyInstance } from 'fastify';
+import { SCHEMA_VERSION } from '@calliope/library';
+import type { AppState } from '../state.js';
+
+const GIT_SHA = process.env.GIT_SHA ?? 'dev';
+
+export function statusRoutes(app: FastifyInstance, state: AppState): void {
+  // Deliberately cheap and dependency-free: this is what the container's health
+  // check and CI's smoke test call, so it must answer before the first scan
+  // finishes and must not fail because ABS is down.
+  app.get('/api/health', async () => ({ ok: true, gitSha: GIT_SHA }));
+
+  app.get('/api/status', async () => ({
+    gitSha: GIT_SHA,
+    schemaVersion: SCHEMA_VERSION,
+    library: {
+      root: state.config.libraryRoot,
+      books: state.index.count(),
+      scanning: state.isScanning,
+      lastScan: state.lastScan,
+    },
+    audiobookshelf: state.abs
+      ? { configured: true, url: state.config.abs?.url, error: state.absError }
+      : { configured: false },
+    backupOnSave: state.config.backupOnSave,
+  }));
+}

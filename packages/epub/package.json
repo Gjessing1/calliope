@@ -1,0 +1,26 @@
+{
+  "name": "@calliope/epub",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Read, normalize and write EPUB metadata — the engine, ported from epub-editor.",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -b",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@calliope/core": "*",
+    "jszip": "^3.10.1",
+    "sharp": "^0.33.2",
+    "xml2js": "^0.6.2"
+  },
+  "devDependencies": {
+    "@types/xml2js": "^0.4.14"
+  }
+}

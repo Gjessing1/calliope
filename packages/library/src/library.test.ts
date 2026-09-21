@@ -1,0 +1,264 @@
+import { mkdtemp, mkdir, rm, writeFile, utimes } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import JSZip from 'jszip';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import type { AbsBook, LibraryBook } from '@calliope/core';
+import { emptyMetadata } from '@calliope/core';
+import { bookId } from '@calliope/epub';
+import { CoverCache } from './covers.js';
+import { LibraryIndex, ftsQuery } from './index-db.js';
+import { absDrift } from './merge.js';
+import { findEpubs, scanLibrary } from './scan.js';
+
+let root: string;
+
+async function writeEpubAt(relative: string, title: string, author: string): Promise<void> {
+  const target = path.join(root, 'books', relative);
+  await mkdir(path.dirname(target), { recursive: true });
+
+  const zip = new JSZip();
+  zip.file('mimetype', 'application/epub+zip', { compression: 'STORE' });
+  zip.file(
+    'META-INF/container.xml',
+    `<?xml version="1.0"?><container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container"><rootfiles><rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/></rootfiles></container>`,
+  );
+  zip.file(
+    'OEBPS/content.opf',
+    `<?xml version="1.0" encoding="utf-8"?>
+<package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="bookid">
+  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+    <dc:title>${title}</dc:title>
+    <dc:creator>${author}</dc:creator>
+    <dc:identifier id="bookid">urn:uuid:${relative}</dc:identifier>
+  </metadata>
+  <manifest><item id="nav" href="nav.xhtml" media-type="application/xhtml+xml"/></manifest>
+  <spine><itemref idref="nav"/></spine>
+</package>`,
+  );
+  await writeFile(target, await zip.generateAsync({ type: 'nodebuffer' }));
+}
+
+beforeEach(async () => {
+  root = await mkdtemp(path.join(tmpdir(), 'calliope-test-'));
+  await mkdir(path.join(root, 'books'), { recursive: true });
+});
+
+afterEach(async () => {
+  await rm(root, { recursive: true, force: true });
+});
+
+describe('findEpubs', () => {
+  it('walks nested folders and ignores everything that is not an epub', async () => {
+    await writeEpubAt('Sult - Knut Hamsun/Sult - Knut Hamsun.epub', 'Sult', 'Knut Hamsun');
+    await writeEpubAt('The Trial - Franz Kafka/The Trial - Franz Kafka.epub', 'The Trial', 'Kafka');
+    await writeFile(path.join(root, 'books', 'notes.txt'), 'not a book');
+    await mkdir(path.join(root, 'books', '.stfolder'), { recursive: true });
+    await writeFile(path.join(root, 'books', '.stfolder', 'x.epub'), 'nope');
+
+    const found: string[] = [];
+    for await (const p of findEpubs(path.join(root, 'books'))) found.push(p);
+
+    expect(found.sort()).toEqual([
+      'Sult - Knut Hamsun/Sult - Knut Hamsun.epub',
+      'The Trial - Franz Kafka/The Trial - Franz Kafka.epub',
+    ]);
+  });
+});
+
+describe('scanLibrary', () => {
+  it('adds, then skips unchanged files, then removes deleted ones', async () => {
+    const books = path.join(root, 'books');
+    const index = new LibraryIndex(':memory:');
+    const covers = new CoverCache(path.join(root, 'covers'));
+
+    await writeEpubAt('Sult - Knut Hamsun/Sult - Knut Hamsun.epub', 'Sult', 'Knut Hamsun');
+    await writeEpubAt('War and Peace - Leo Tolstoy/wap.epub', 'War and Peace', 'Leo Tolstoy');
+
+    const first = await scanLibrary(books, index, covers);
+    expect(first).toMatchObject({ seen: 2, added: 2, updated: 0, removed: 0, unchanged: 0 });
+    expect(index.count()).toBe(2);
+
+    // Nothing touched the files, so the second pass must not re-parse them.
+    const second = await scanLibrary(books, index, covers);
+    expect(second).toMatchObject({ seen: 2, added: 0, updated: 0, unchanged: 2 });
+
+    await rm(path.join(books, 'War and Peace - Leo Tolstoy'), { recursive: true });
+    const third = await scanLibrary(books, index, covers);
+    expect(third).toMatchObject({ seen: 1, removed: 1 });
+    expect(index.count()).toBe(1);
+
+    index.close();
+  });
+
+  // Mtime alone would miss a file restored from backup with its timestamp
+  // preserved; size alone would miss an edit that happened to keep the size.
+  it('re-parses when the size changes even if mtime is restored', async () => {
+    const books = path.join(root, 'books');
+    const index = new LibraryIndex(':memory:');
+    const covers = new CoverCache(path.join(root, 'covers'));
+
+    const rel = 'Sult - Knut Hamsun/Sult - Knut Hamsun.epub';
+    await writeEpubAt(rel, 'Sult', 'Knut Hamsun');
+    await scanLibrary(books, index, covers);
+
+    const file = path.join(books, rel);
+    const before = index.get(bookId(rel));
+    await writeEpubAt(rel, 'Sult (revised edition with a much longer title)', 'Knut Hamsun');
+    await utimes(file, new Date(before!.mtimeMs), new Date(before!.mtimeMs));
+
+    const again = await scanLibrary(books, index, covers);
+    expect(again).toMatchObject({ updated: 1, unchanged: 0 });
+    expect(index.get(bookId(rel))?.metadata.title).toMatch(/revised edition/);
+
+    index.close();
+  });
+
+  it('records a corrupt book as an error and keeps going', async () => {
+    const books = path.join(root, 'books');
+    const index = new LibraryIndex(':memory:');
+    const covers = new CoverCache(path.join(root, 'covers'));
+
+    await writeEpubAt('Good/good.epub', 'Good Book', 'An Author');
+    await mkdir(path.join(books, 'Bad'), { recursive: true });
+    await writeFile(path.join(books, 'Bad', 'bad.epub'), 'this is not a zip');
+
+    const summary = await scanLibrary(books, index, covers);
+    expect(summary.seen).toBe(2);
+    expect(summary.added).toBe(1);
+    expect(summary.errors).toHaveLength(1);
+    expect(summary.errors[0]?.path).toBe('Bad/bad.epub');
+    expect(index.count()).toBe(1);
+
+    index.close();
+  });
+});
+
+describe('LibraryIndex', () => {
+  const makeBook = (title: string, author: string, series = ''): LibraryBook => ({
+    id: bookId(`${title}.epub`),
+    path: `${title}.epub`,
+    folder: '',
+    fileSize: 1000,
+    mtimeMs: 1,
+    epubVersion: '3.0',
+    metadata: {
+      ...emptyMetadata(),
+      title,
+      author,
+      authors: [{ name: author, role: 'aut', fileAs: null }],
+      series,
+      subjects: ['Fiction'],
+    },
+    hasCover: false,
+    scannedAt: Date.now(),
+  });
+
+  it('lists, searches by prefix and sorts', () => {
+    const index = new LibraryIndex(':memory:');
+    index.upsert(makeBook('War and Peace', 'Leo Tolstoy'));
+    index.upsert(makeBook('Crime and Punishment', 'Fyodor Dostoyevsky'));
+    index.upsert(makeBook('Sult', 'Knut Hamsun'));
+
+    expect(index.list({ sort: 'title' }).map((b) => b.metadata.title)).toEqual([
+      'Crime and Punishment',
+      'Sult',
+      'War and Peace',
+    ]);
+    expect(index.list({ sort: 'author' })[0]?.metadata.author).toBe('Fyodor Dostoyevsky');
+
+    // Prefix matching: the search box filters while the user is still typing.
+    expect(index.list({ search: 'dosto' })).toHaveLength(1);
+    expect(index.list({ search: 'peace' })).toHaveLength(1);
+
+    index.close();
+  });
+
+  it('replaces the search entry on update instead of accumulating', () => {
+    const index = new LibraryIndex(':memory:');
+    const book = makeBook('Old Title', 'An Author');
+    index.upsert(book);
+    index.upsert({ ...book, metadata: { ...book.metadata, title: 'New Title' } });
+
+    expect(index.list({ search: 'Old' })).toHaveLength(0);
+    expect(index.list({ search: 'New' })).toHaveLength(1);
+    index.close();
+  });
+
+  // A bare apostrophe or hyphen is FTS5 syntax; unquoted it throws rather than
+  // returning nothing, which would take out the whole list view.
+  it('survives punctuation in the search box', () => {
+    const index = new LibraryIndex(':memory:');
+    index.upsert(makeBook("Captain Stormfield's Visit", 'Mark Twain'));
+    expect(() => index.list({ search: "Stormfield's" })).not.toThrow();
+    expect(() => index.list({ search: 'a - b "quoted"' })).not.toThrow();
+    index.close();
+  });
+
+  it('quotes every term in an FTS query and makes it a prefix match', () => {
+    expect(ftsQuery('knut hamsun')).toBe('"knut"* "hamsun"*');
+    expect(ftsQuery('say "what"')).toBe('"say"* """what"""*');
+  });
+});
+
+describe('absDrift', () => {
+  const book: LibraryBook = {
+    id: 'a',
+    path: 'a.epub',
+    folder: '',
+    fileSize: 1,
+    mtimeMs: 1,
+    epubVersion: '3.0',
+    metadata: {
+      ...emptyMetadata(),
+      title: 'The Trial',
+      author: 'Franz Kafka',
+      authors: [{ name: 'Franz Kafka', role: 'aut', fileAs: null }],
+      publisher: 'Schocken',
+      date: '1925-01-01',
+      language: 'en',
+    },
+    hasCover: true,
+    scannedAt: 1,
+  };
+
+  const abs: AbsBook = {
+    id: 'li_1',
+    libraryId: 'lib_1',
+    path: '/books/The Trial',
+    title: 'The Trial',
+    authors: ['Franz Kafka'],
+    series: [],
+    narrators: [],
+    publishedYear: '1925',
+    publisher: 'Schocken',
+    description: null,
+    genres: [],
+    language: 'en',
+    isbn: null,
+    coverPath: null,
+    updatedAt: 0,
+  };
+
+  it('reports nothing when the two agree', () => {
+    expect(absDrift(book, abs)).toEqual([]);
+  });
+
+  it('reports nothing when ABS is not configured', () => {
+    expect(absDrift(book, null)).toEqual([]);
+  });
+
+  // ABS stores only a year, so a full EPUB date in the same year is agreement.
+  it('compares the ABS year against the EPUB date year', () => {
+    expect(absDrift(book, { ...abs, publishedYear: '1925' })).toEqual([]);
+    expect(absDrift(book, { ...abs, publishedYear: '1926' })).toEqual(['date']);
+  });
+
+  it('catches a title overridden in ABS but never written to the file', () => {
+    expect(absDrift(book, { ...abs, title: 'Der Process' })).toEqual(['title']);
+  });
+
+  it('catches an extra author on one side', () => {
+    expect(absDrift(book, { ...abs, authors: ['Franz Kafka', 'Willa Muir'] })).toEqual(['authors']);
+  });
+});

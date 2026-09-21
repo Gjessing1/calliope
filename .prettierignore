@@ -1,0 +1,10 @@
+node_modules
+dist
+build
+backend/public
+apps/android/android
+apps/android/www
+CLAUDE.md
+AGENTS.md
+docs
+package-lock.json

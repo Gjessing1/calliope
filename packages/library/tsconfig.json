@@ -1,0 +1,11 @@
+{
+  "_comment": "`node:sqlite` is used directly here: the index is a server-side cache of the filesystem and never ships to a client, so there is nothing to gain from abstracting the driver.",
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "rootDir": "src",
+    "tsBuildInfoFile": "dist/tsconfig.tsbuildinfo"
+  },
+  "include": ["src/**/*"],
+  "references": [{ "path": "../core" }, { "path": "../epub" }]
+}

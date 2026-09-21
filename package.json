@@ -1,0 +1,44 @@
+{
+  "name": "calliope",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "EPUB library manager and metadata editor for a self-hosted ebook library (web + Android).",
+  "workspaces": [
+    "packages/*",
+    "apps/web",
+    "apps/android",
+    "backend"
+  ],
+  "scripts": {
+    "_comment:build:packages": "Dependency order is derived from each package's @calliope/* deps by scripts/build-packages.mjs \u2014 no hand-maintained wave list. A new package needs no edit here: drop it in packages/, declare its deps, done.",
+    "build:packages": "node scripts/build-packages.mjs",
+    "build": "npm run build:packages && npm run build -w @calliope/backend && npm run build -w @calliope/web",
+    "dev": "npm run build:packages && concurrently -k -n backend,web -c blue,green \"npm:dev:backend\" \"npm:dev:web\"",
+    "dev:backend": "npm run dev -w @calliope/backend",
+    "dev:web": "npm run dev -w @calliope/web",
+    "typecheck": "npm run build:packages && npm run typecheck --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "_comment:gate": "The pre-push gate. Runs format/lint/build/typecheck/tests and decides from the diff whether this change can break the *image* (a package.json, the lockfile, the Dockerfile, CI) and therefore needs the local `docker build` too. CI's image build always runs the full suite regardless.",
+    "gate": "node scripts/gate.mjs",
+    "lint": "eslint . --cache --cache-location node_modules/.cache/eslint/",
+    "format": "prettier --write . --cache",
+    "format:check": "prettier --check . --cache",
+    "android:sync": "npm run sync -w @calliope/android"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.17.0",
+    "@types/node": "^24.0.0",
+    "concurrently": "^9.1.0",
+    "eslint": "^9.17.0",
+    "globals": "^16.5.0",
+    "prettier": "^3.4.2",
+    "typescript": "^5.7.2",
+    "typescript-eslint": "^8.18.1",
+    "vitest": "^3.0.0"
+  },
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "_comment:engines": "node:sqlite landed in 22.5 (behind an ExperimentalWarning) and is stable in 24. The image runs 24; this host runs 22, which works. Raise this to >=24 once the host is upgraded."
+}

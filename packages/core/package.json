@@ -1,0 +1,17 @@
+{
+  "name": "@calliope/core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Shared domain types and small utilities. Depends on nothing.",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -b",
+    "test": "vitest run --passWithNoTests"
+  }
+}

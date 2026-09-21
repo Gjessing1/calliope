@@ -1,0 +1,46 @@
+# --- Personal planning docs (kept local, not committed) ---
+CLAUDE.md
+AGENTS.md
+.claude/
+docs/
+
+# --- Dependencies ---
+node_modules/
+.npm/
+
+# --- Build output ---
+dist/
+# apps/web emits declarations here (tsconfig outDir), not into dist/.
+dist-types/
+build/
+*.tsbuildinfo
+# Built web app copied here by backend/Dockerfile for production serving.
+backend/public/
+# Capacitor copies the built web app here before a native build.
+apps/android/www/
+
+# --- Env & secrets ---
+.env
+.env.*
+!.env.example
+
+# --- Persistent data (host: /mnt/data/calliope) ---
+data/
+# Dev symlink to the host data dir (trailing-slash patterns don't match symlinks).
+backend/data
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+
+# --- Android build artifacts ---
+apps/android/android/
+apps/android/.gradle-home/
+
+# --- Logs / misc ---
+*.log
+npm-debug.log*
+.DS_Store
+coverage/
+.vite/
+test-results/
+playwright-report/

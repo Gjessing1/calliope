@@ -1,0 +1,12 @@
+{
+  "_comment": "Solution-style root: `tsc -b` here builds every workspace in dependency order. Holds no files of its own.",
+  "files": [],
+  "references": [
+    { "path": "packages/core" },
+    { "path": "packages/epub" },
+    { "path": "packages/metadata" },
+    { "path": "packages/library" },
+    { "path": "backend" },
+    { "path": "apps/web" }
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "_comment": "Capacitor's CLI reads capacitor.config.ts itself; this config exists only so the editor and `npm run typecheck` understand that file. It is deliberately not part of the root solution build.",
+  "compilerOptions": {
+    "target": "ES2023",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "strict": true,
+    "skipLibCheck": true,
+    "noEmit": true
+  },
+  "include": ["capacitor.config.ts"]
+}

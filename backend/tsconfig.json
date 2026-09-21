@@ -1,0 +1,15 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "rootDir": "src",
+    "tsBuildInfoFile": "dist/tsconfig.tsbuildinfo"
+  },
+  "include": ["src/**/*"],
+  "references": [
+    { "path": "../packages/core" },
+    { "path": "../packages/epub" },
+    { "path": "../packages/library" },
+    { "path": "../packages/metadata" }
+  ]
+}

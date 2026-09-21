@@ -1,0 +1,112 @@
+# Builds the Calliope image (web app included, served same-origin), pushes it to
+# Forgejo's container registry, then redeploys on this host.
+#
+# Runner specifics (host-Docker-socket model, same as atlas/epub-editor):
+# - `runs-on: docker` -> catthehacker/ubuntu:act-latest, which has the docker CLI.
+# - docker build/push run against the HOST daemon via the mounted socket.
+# - Pushes go to localhost:3000 (Forgejo's host-published HTTP port) rather than
+#   git.gjessing.io, because Caddy 413s large layer uploads. Registry storage is
+#   hostname-agnostic, so the image is still *pulled* as git.gjessing.io/... .
+# - Auth is a PAT with write:package in the REGISTRY_TOKEN repo secret; the
+#   automatic GITHUB_TOKEN only gets package *read* on this instance.
+name: docker
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+
+env:
+  # Public name — what deployments pull (HTTPS via Caddy).
+  IMAGE: git.gjessing.io/gjessing1/calliope
+  # Push name — straight to Forgejo's host-published port, avoiding Caddy.
+  PUSH_IMAGE: localhost:3000/gjessing1/calliope
+
+jobs:
+  # Build, push and deploy in ONE job. A separate `needs:` deploy job would have
+  # to queue for a second turn on this instance's single capacity-1 runner
+  # (shared by every repo, and often held by atlas's 30-50 minute builds). If a
+  # new commit lands during that wait, Forgejo auto-cancels the previous run's
+  # still-queued job and the deploy is silently skipped, leaving a stale
+  # container behind a green run.
+  build-and-deploy:
+    runs-on: docker
+    permissions:
+      contents: read
+      packages: write # not sufficient alone here; push uses REGISTRY_TOKEN
+    env:
+      DOCKER_BUILDKIT: '1' # the Dockerfile's RUN --mount=type=cache needs it
+      DEPLOY_DIR: /home/gjessing/docker/calliope
+    steps:
+      - uses: actions/checkout@v4
+
+      # Written directly instead of `docker login`: login pings the registry from
+      # the job container (where localhost:3000 is unreachable), but the push
+      # runs on the host daemon (where it works). Both hostnames are authed here.
+      - name: Registry auth
+        run: |
+          mkdir -p ~/.docker
+          auth=$(printf 'gjessing1:%s' "${{ secrets.REGISTRY_TOKEN }}" | base64 -w0)
+          printf '{"auths":{"localhost:3000":{"auth":"%s"},"git.gjessing.io":{"auth":"%s"}}}' \
+            "$auth" "$auth" > ~/.docker/config.json
+
+      # The quality gate (format, lint, build, typecheck, tests) runs INSIDE this
+      # build, so a failure means nothing is tagged or pushed.
+      - name: Build image
+        run: |
+          SHA_TAG="${GITHUB_SHA::7}"
+          docker build --progress=plain -f backend/Dockerfile \
+            --build-arg GIT_SHA="$GITHUB_SHA" \
+            -t "$IMAGE:latest" -t "$IMAGE:$SHA_TAG" \
+            -t "$PUSH_IMAGE:latest" -t "$PUSH_IMAGE:$SHA_TAG" .
+
+      # A green gate proves the code compiles; it does NOT prove the image RUNS.
+      # A workspace missing from the runtime stage only surfaces as an
+      # import-time crash loop. Boot the freshly built image with an empty
+      # library and require /api/health before anything is pushed. Polled via
+      # `docker exec` because the container runs on the HOST daemon and a
+      # published port is not reachable from this job container.
+      - name: Smoke test — the image must actually boot
+        run: |
+          SHA_TAG="${GITHUB_SHA::7}"
+          cid=$(docker run -d -e CALLIOPE_SCAN_ON_START=false "$IMAGE:$SHA_TAG")
+          ok=""
+          for i in $(seq 1 30); do
+            if docker exec "$cid" node -e "fetch('http://127.0.0.1:3008/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))" 2>/dev/null; then
+              ok=1; break
+            fi
+            sleep 1
+          done
+          echo "----- container logs -----"; docker logs "$cid" 2>&1 | tail -40 || true
+          docker rm -f "$cid" >/dev/null 2>&1 || true
+          if [ -z "$ok" ]; then echo "::error::built image failed to serve /api/health"; exit 1; fi
+          echo "image booted and served /api/health"
+
+      - name: Push image
+        run: |
+          SHA_TAG="${GITHUB_SHA::7}"
+          docker push "$PUSH_IMAGE:latest"
+          docker push "$PUSH_IMAGE:$SHA_TAG"
+
+      - name: Pull and restart
+        if: github.ref == 'refs/heads/main'
+        run: |
+          cd "$DEPLOY_DIR"
+          docker compose pull
+          docker compose up -d --remove-orphans
+
+      # Fail loudly if the stack came back on the old image, so a lost deploy
+      # shows up as a red run instead of a green one with a stale container.
+      - name: Verify deploy
+        if: github.ref == 'refs/heads/main'
+        run: |
+          cd "$DEPLOY_DIR"
+          built=$(docker image inspect --format '{{.Id}}' "$IMAGE:latest")
+          running=$(docker compose ps -q | xargs -r docker inspect --format '{{.Image}}')
+          if ! printf '%s\n' "$running" | grep -qFx "$built"; then
+            echo "no running container uses the image just built ($built)" >&2
+            docker compose ps >&2
+            exit 1
+          fi
+          echo "deployed $built"

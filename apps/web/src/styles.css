@@ -1,0 +1,370 @@
+/*
+ * One stylesheet, custom properties for theming, no framework.
+ *
+ * Both themes are defined here rather than toggled in JS: the app is also the
+ * payload of the Android WebView, where a flash of the wrong theme on every cold
+ * start is the most visible thing about it.
+ */
+:root {
+  --bg: #fbf9f4;
+  --surface: #ffffff;
+  --surface-2: #f2eee5;
+  --ink: #1c1a17;
+  --ink-soft: #625c52;
+  --line: #e0d9cb;
+  --accent: #7a4b2a;
+  --accent-ink: #ffffff;
+  --warn-bg: #fdf3d8;
+  --warn-ink: #6b4e12;
+  --error-bg: #fbe3df;
+  --error-ink: #7d2418;
+  --radius: 10px;
+  --shadow: 0 1px 2px rgb(28 26 23 / 0.06), 0 8px 24px rgb(28 26 23 / 0.08);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #171614;
+    --surface: #211f1c;
+    --surface-2: #2b2825;
+    --ink: #f0ece4;
+    --ink-soft: #a49c8f;
+    --line: #3a3531;
+    --accent: #d09a6c;
+    --accent-ink: #1c1a17;
+    --warn-bg: #3a3218;
+    --warn-ink: #f0d79a;
+    --error-bg: #3d211c;
+    --error-ink: #f3b8ac;
+    --shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 8px 24px rgb(0 0 0 / 0.4);
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: 'Iowan Old Style', 'Palatino Linotype', Palatino, Georgia, serif;
+  font-size: 16px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+input,
+select,
+textarea,
+button {
+  font: inherit;
+  color: inherit;
+}
+
+.app {
+  max-width: 1200px;
+  margin: 0 auto;
+  /* viewport-fit=cover plus these insets keeps the toolbar clear of the
+     Android gesture bar and a notch. */
+  padding: max(16px, env(safe-area-inset-top)) 16px calc(24px + env(safe-area-inset-bottom));
+}
+
+.masthead h1 {
+  font-size: 1.9rem;
+  letter-spacing: -0.01em;
+  margin: 8px 0 4px;
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.masthead-sub {
+  font-size: 0.85rem;
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  color: var(--ink-soft);
+  font-weight: 400;
+}
+
+.toolbar {
+  display: flex;
+  gap: 8px;
+  margin: 16px 0 20px;
+  flex-wrap: wrap;
+}
+
+.toolbar .search {
+  flex: 1 1 240px;
+}
+
+input,
+select,
+textarea {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 9px 12px;
+  width: 100%;
+}
+
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+button {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 9px 14px;
+  cursor: pointer;
+}
+
+button:hover:not(:disabled) {
+  background: var(--surface-2);
+}
+
+button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+button.primary {
+  background: var(--accent);
+  color: var(--accent-ink);
+  border-color: var(--accent);
+}
+
+.grid {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 20px 16px;
+}
+
+.card {
+  width: 100%;
+  background: none;
+  border: none;
+  padding: 0;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.card:hover {
+  background: none;
+}
+
+.cover {
+  position: relative;
+  display: block;
+  aspect-ratio: 2 / 3;
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--surface-2);
+  box-shadow: var(--shadow);
+  margin-bottom: 6px;
+}
+
+.cover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.cover-placeholder {
+  display: grid;
+  place-items: center;
+  height: 100%;
+  font-size: 3rem;
+  color: var(--ink-soft);
+}
+
+.badge {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  min-width: 20px;
+  height: 20px;
+  border-radius: 10px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-size: 0.7rem;
+  display: grid;
+  place-items: center;
+  padding: 0 6px;
+}
+
+.card-title {
+  font-size: 0.95rem;
+  line-height: 1.25;
+}
+
+.card-author,
+.card-series {
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-size: 0.78rem;
+  color: var(--ink-soft);
+}
+
+.empty,
+.path,
+.hint {
+  color: var(--ink-soft);
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-size: 0.85rem;
+}
+
+.banner {
+  border-radius: var(--radius);
+  padding: 10px 14px;
+  margin: 12px 0;
+  background: var(--surface-2);
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-size: 0.85rem;
+}
+
+.banner-warn {
+  background: var(--warn-bg);
+  color: var(--warn-ink);
+}
+
+.banner-error {
+  background: var(--error-bg);
+  color: var(--error-ink);
+}
+
+.sheet-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgb(0 0 0 / 0.35);
+  display: flex;
+  justify-content: flex-end;
+  z-index: 10;
+}
+
+.sheet {
+  background: var(--bg);
+  width: min(560px, 100%);
+  height: 100%;
+  overflow-y: auto;
+  padding: 20px 20px calc(32px + env(safe-area-inset-bottom));
+  box-shadow: var(--shadow);
+}
+
+.sheet-head {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.sheet-head h2 {
+  margin: 0;
+  font-size: 1.25rem;
+}
+
+button.icon {
+  border: none;
+  background: none;
+  font-size: 1.6rem;
+  line-height: 1;
+  padding: 0 6px;
+}
+
+.fields {
+  display: grid;
+  gap: 12px;
+  margin: 18px 0;
+}
+
+.fields label {
+  display: grid;
+  gap: 4px;
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-size: 0.78rem;
+  color: var(--ink-soft);
+}
+
+.fields input,
+.fields textarea {
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-size: 0.9rem;
+  color: var(--ink);
+}
+
+.row {
+  display: grid;
+  grid-template-columns: 1fr 120px;
+  gap: 10px;
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  position: sticky;
+  bottom: 0;
+  background: var(--bg);
+  padding: 12px 0;
+}
+
+.candidates ul,
+.covers ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.candidates li button {
+  width: 100%;
+  text-align: left;
+  display: grid;
+  gap: 2px;
+  margin-bottom: 6px;
+}
+
+.candidates li span {
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-size: 0.78rem;
+  color: var(--ink-soft);
+}
+
+.covers ul {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(90px, 1fr));
+  gap: 10px;
+}
+
+.covers li button {
+  padding: 3px;
+  width: 100%;
+}
+
+.covers li button.chosen {
+  border-color: var(--accent);
+  border-width: 2px;
+}
+
+.covers img {
+  width: 100%;
+  aspect-ratio: 2 / 3;
+  object-fit: cover;
+  display: block;
+  border-radius: 4px;
+}
+
+h3 {
+  font-size: 0.9rem;
+  margin: 18px 0 8px;
+}

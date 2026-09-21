@@ -1,0 +1,28 @@
+# The image build must be cold and honest: never ship or reuse local build state.
+node_modules
+**/node_modules
+dist
+**/dist
+# apps/web's declaration output lives here, not in dist/.
+dist-types
+**/dist-types
+**/*.tsbuildinfo
+build
+backend/public
+apps/android
+.git
+.github
+.forgejo
+.claude
+docs
+CLAUDE.md
+AGENTS.md
+data
+**/data
+*.sqlite*
+.env
+.env.*
+coverage
+test-results
+playwright-report
+npm-debug.log*
