@@ -9,7 +9,11 @@ dist-types
 **/*.tsbuildinfo
 build
 backend/public
-apps/android
+# Keep the Android workspace manifest/config in the cold quality gate, but not
+# generated native sources, copied web assets, or Gradle caches.
+apps/android/android
+apps/android/www
+apps/android/.gradle-home
 .git
 .github
 .forgejo

@@ -20,6 +20,8 @@ export interface Config {
   backupOnSave: boolean;
   /** Walk the library on startup. */
   scanOnStart: boolean;
+  /** Bearer tokens accepted from native clients that bypass the browser SSO. */
+  deviceTokens: string[];
   abs: {
     url: string;
     token: string;
@@ -59,6 +61,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       : 10,
     backupOnSave: bool(env.CALLIOPE_BACKUP_ON_SAVE, false),
     scanOnStart: bool(env.CALLIOPE_SCAN_ON_START, true),
+    deviceTokens: (env.CALLIOPE_DEVICE_TOKENS ?? '')
+      .split(/[\s,]+/)
+      .map((token) => token.trim())
+      .filter(Boolean),
     abs:
       absUrl && absToken
         ? {

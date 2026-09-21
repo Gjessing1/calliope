@@ -24,6 +24,9 @@ services:
       # Full pre-write EPUB snapshots under /data/revisions. Restores are exact
       # and reversible; old snapshots are pruned per book.
       CALLIOPE_REVISION_LIMIT: '10'
+      # Native clients bypass browser SSO only when they present one of these
+      # per-device bearer tokens. Comma-separate tokens for several phones.
+      CALLIOPE_DEVICE_TOKENS: ${CALLIOPE_DEVICE_TOKENS}
       # Audiobookshelf integration. Both must be set or ABS is treated as
       # unconfigured; the token is an ABS API key (Settings → API Keys).
       ABS_URL: http://audiobookshelf:80

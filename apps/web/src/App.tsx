@@ -209,7 +209,7 @@ export function App(): JSX.Element {
         onDriftOnly={setDriftOnly}
       />
 
-      {error && <p className="banner banner-error">{error}</p>}
+      {error && books.length > 0 && <p className="banner banner-error">{error}</p>}
       {status?.audiobookshelf.error && (
         <p className="banner banner-warn">
           Audiobookshelf unreachable: {status.audiobookshelf.error}. Showing file metadata only.
@@ -246,6 +246,25 @@ export function App(): JSX.Element {
 
       {loading ? (
         <p className="empty">Loading the library…</p>
+      ) : error && books.length === 0 ? (
+        <section className="offline" role="alert">
+          <h2>Calliope is unreachable</h2>
+          <p>
+            The library stays on the server, so it needs a connection before books can be viewed or
+            edited.
+          </p>
+          <p className="hint">{error}</p>
+          <button
+            className="primary"
+            type="button"
+            onClick={() => {
+              setLoading(true);
+              void reload();
+            }}
+          >
+            Try again
+          </button>
+        </section>
       ) : books.length === 0 ? (
         <p className="empty">
           {driftOnly

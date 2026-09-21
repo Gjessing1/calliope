@@ -110,3 +110,17 @@ jobs:
             exit 1
           fi
           echo "deployed $built"
+
+      # The APK's native runtime is a compatibility boundary. Every ordinary
+      # web release is published into that runtime's OTA channel; a native
+      # dependency change bumps VERSION_CODE and waits for its matching APK.
+      - name: Publish Android web update
+        if: github.ref == 'refs/heads/main'
+        run: |
+          . apps/android/version.properties
+          SHA_TAG="${GITHUB_SHA::7}"
+          docker run --rm \
+            -v /mnt/data/calliope:/data \
+            "$IMAGE:$SHA_TAG" \
+            node scripts/publish-web-update.mjs \
+              /app/backend/public /data "$VERSION_CODE" "$GITHUB_SHA"

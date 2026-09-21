@@ -9,6 +9,8 @@
  */
 interface ImportMetaEnv {
   readonly VITE_API_ORIGIN?: string;
+  /** Git commit carried by the built-in Android web bundle. */
+  readonly VITE_APP_BUNDLE_ID?: string;
 }
 
 interface ImportMeta {

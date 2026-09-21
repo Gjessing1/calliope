@@ -20,7 +20,16 @@ import type {
  * proxies `/api` in dev. The Android shell has no same-origin backend at all, so
  * it sets `VITE_API_ORIGIN` at build time to the server it should talk to.
  */
-const API_ORIGIN = import.meta.env.VITE_API_ORIGIN ?? '';
+export const API_ORIGIN = (import.meta.env.VITE_API_ORIGIN ?? '').replace(/\/+$/, '');
+const DEVICE_TOKEN_KEY = 'calliope.deviceToken';
+
+export function deviceToken(): string {
+  return localStorage.getItem(DEVICE_TOKEN_KEY)?.trim() ?? '';
+}
+
+export function forgetDeviceToken(): void {
+  localStorage.removeItem(DEVICE_TOKEN_KEY);
+}
 
 export class ApiError extends Error {
   constructor(
@@ -32,19 +41,48 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(pathname: string, init?: RequestInit): Promise<T> {
+async function request<T>(pathname: string, init?: RequestInit, token = deviceToken()): Promise<T> {
   // Only a request with a body is JSON. Fastify rejects a bodiless POST that
   // claims to be JSON with a 400 — which is how the Rescan button once failed
   // silently on every click.
+  const headers = new Headers(init?.headers);
+  if (init?.body) headers.set('Content-Type', 'application/json');
+  if (token) headers.set('Authorization', `Bearer ${token}`);
   const res = await fetch(`${API_ORIGIN}${pathname}`, {
     ...init,
-    headers: init?.body ? { 'Content-Type': 'application/json', ...init.headers } : init?.headers,
+    headers,
   });
   if (!res.ok) {
     const body = (await res.json().catch(() => ({}))) as { error?: string };
     throw new ApiError(res.status, body.error ?? `Request failed (${res.status})`);
   }
+  if (res.status === 204) return null as T;
   return (await res.json()) as T;
+}
+
+export async function connectDeviceToken(token: string): Promise<void> {
+  const candidate = token.trim();
+  if (!candidate) throw new Error('Enter the device token from the Calliope server.');
+  await request<Status>('/api/status', undefined, candidate);
+  localStorage.setItem(DEVICE_TOKEN_KEY, candidate);
+}
+
+export interface AndroidRelease {
+  versionCode: number;
+  versionName: string;
+  bytes: number;
+  sha256: string;
+  apkUrl: string;
+}
+
+export interface WebUpdate {
+  id: string;
+  file: string;
+  bytes: number;
+  sha256: string;
+  checksum: string;
+  createdAt: string;
+  url: string;
 }
 
 export interface LibraryPage {
@@ -88,6 +126,13 @@ export interface Status {
 
 export const api = {
   status: () => request<Status>('/api/status'),
+
+  androidRelease: () => request<AndroidRelease>('/api/app/version'),
+
+  webUpdate: (runtimeVersion: string, currentBundleId: string) =>
+    request<WebUpdate | null>(
+      `/api/app/update?runtimeVersion=${encodeURIComponent(runtimeVersion)}&currentBundleId=${encodeURIComponent(currentBundleId)}`,
+    ),
 
   library: (
     params: {

@@ -19,12 +19,15 @@ COPY packages/epub/package.json packages/epub/
 COPY packages/metadata/package.json packages/metadata/
 COPY packages/library/package.json packages/library/
 COPY apps/web/package.json apps/web/
+COPY apps/android/package.json apps/android/
 COPY backend/package.json backend/
 # `npm ci` fails outright when the lockfile does not describe these manifests —
 # which is exactly the packaging mistake this image build exists to catch.
 RUN --mount=type=cache,target=/root/.npm npm ci
 
 FROM deps AS gate
+ARG GIT_SHA=dev
+ENV VITE_APP_BUNDLE_ID=$GIT_SHA
 COPY . .
 RUN npm run format:check \
  && npm run lint \
@@ -38,6 +41,7 @@ FROM gate AS prune
 RUN --mount=type=cache,target=/root/.npm npm ci --omit=dev
 
 FROM node:24-bookworm-slim AS runtime
+ARG GIT_SHA=dev
 ENV NODE_ENV=production
 WORKDIR /app
 
@@ -57,11 +61,11 @@ COPY --from=gate /app/packages/library/package.json ./packages/library/
 COPY --from=gate /app/packages/library/dist ./packages/library/dist
 COPY --from=gate /app/backend/package.json ./backend/
 COPY --from=gate /app/backend/dist ./backend/dist
+COPY --from=gate /app/scripts/publish-web-update.mjs ./scripts/publish-web-update.mjs
 
 # The built web app, served same-origin by the backend.
 COPY --from=gate /app/apps/web/dist ./backend/public
 
-ARG GIT_SHA=dev
 ENV GIT_SHA=$GIT_SHA
 ENV PORT=3008
 ENV CALLIOPE_LIBRARY_ROOT=/books

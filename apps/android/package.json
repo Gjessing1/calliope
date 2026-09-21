@@ -9,13 +9,16 @@
     "sync": "npm run build -w @calliope/web && cap sync android",
     "open": "cap open android",
     "build:apk": "./build-apk.sh",
+    "publish:apk": "./publish-apk.sh",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
     "@capacitor/android": "^7.0.0",
     "@capacitor/app": "^7.0.0",
+    "@capacitor/browser": "^7.0.5",
     "@capacitor/core": "^7.0.0",
-    "@capacitor/status-bar": "^7.0.0"
+    "@capacitor/status-bar": "^7.0.0",
+    "@capawesome/capacitor-live-update": "^7.5.0"
   },
   "devDependencies": {
     "@capacitor/cli": "^7.0.0"

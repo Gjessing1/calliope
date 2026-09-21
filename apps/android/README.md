@@ -26,9 +26,28 @@ launches it.
 CALLIOPE_API_ORIGIN=http://192.168.1.10:3008 npm run sync -w @calliope/android
 npx cap open android            # then Run from the IDE
 
-# release
+# release: builds the current web UI into a signed APK
 CALLIOPE_API_ORIGIN=https://calliope.example.org ./build-apk.sh
+./publish-apk.sh
 ```
+
+## Updates
+
+Each APK is tied to one Calliope server. On first launch it asks for a device
+token from that server; the token is stored only on the phone and sent as a
+Bearer token on API requests. There is intentionally no server picker or
+fallback origin that could silently open the wrong library.
+
+Most releases are web-only. The main-branch workflow publishes the same web
+build as a checksum-verified OTA bundle under the APK's `VERSION_CODE`; the app
+downloads it in the background, offers a restart, and rolls back to its built-in
+bundle if the update cannot start. A Capacitor/plugin/config change is native:
+bump both values in `version.properties`, build and publish a new signed APK,
+then devices receive that through the stable `/api/app/download` URL.
+
+The release keystore and its passwords live in
+`~/.config/calliope/keystore.env`, never in the repository. `publish-apk.sh`
+refuses debuggable, unsigned, or version-mismatched artifacts.
 
 ## Why the API origin is a build-time variable
 
@@ -39,6 +58,6 @@ build time keeps the app's first paint free of a configuration screen — at the
 cost of one APK per server, which for a self-hosted single-server app is the
 right trade.
 
-If that stops being true, the replacement is a first-run settings screen writing
-to `localStorage`, not a default origin: a wrong default silently talks to the
-wrong library.
+If one APK ever needs to serve several installations, replace this with a
+first-run origin screen. Do not add a default origin: a wrong default silently
+talks to the wrong library.

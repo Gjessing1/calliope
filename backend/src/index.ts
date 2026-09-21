@@ -5,6 +5,8 @@ import cors from '@fastify/cors';
 import fastifyStatic from '@fastify/static';
 import Fastify from 'fastify';
 import { loadConfig } from './config.js';
+import { registerDeviceAuth } from './device-auth.js';
+import { appReleaseRoutes } from './routes/app-release.js';
 import { batchRoutes } from './routes/batch.js';
 import { libraryRoutes } from './routes/library.js';
 import { lookupRoutes } from './routes/lookup.js';
@@ -27,7 +29,9 @@ const app = Fastify({
 // (capacitor://localhost or https://localhost), so it is cross-origin to this
 // API by construction. The web app is same-origin and unaffected.
 await app.register(cors, { origin: true });
+registerDeviceAuth(app, config.deviceTokens);
 
+appReleaseRoutes(app, config.dataDir);
 statusRoutes(app, state);
 libraryRoutes(app, state);
 batchRoutes(app, state);

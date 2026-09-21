@@ -1,3 +1,5 @@
+/// <reference types="@capawesome/capacitor-live-update" />
+
 import type { CapacitorConfig } from '@capacitor/cli';
 
 /**
@@ -21,6 +23,16 @@ const config: CapacitorConfig = {
   },
   server: {
     androidScheme: 'https',
+  },
+  plugins: {
+    LiveUpdate: {
+      // A downloaded UI must prove it can start. Otherwise the next launch
+      // falls back to the APK's built-in bundle instead of boot-looping.
+      readyTimeout: 10_000,
+      autoBlockRolledBackBundles: true,
+      autoDeleteBundles: true,
+      autoUpdateStrategy: 'none',
+    },
   },
 };
 
