@@ -4,6 +4,7 @@ build
 backend/public
 apps/android/android
 apps/android/www
+apps/android/.gradle-home
 CLAUDE.md
 AGENTS.md
 docs

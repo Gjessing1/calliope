@@ -12,6 +12,8 @@ export default tseslint.config(
       'backend/public/**',
       'apps/android/android/**',
       'apps/android/www/**',
+      // build-apk.sh keeps Gradle's cache here; it ships JavaScript of its own.
+      'apps/android/.gradle-home/**',
     ],
   },
   js.configs.recommended,
