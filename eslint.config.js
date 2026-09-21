@@ -7,6 +7,9 @@ export default tseslint.config(
   {
     ignores: [
       '**/dist/**',
+      // apps/web's emitted declarations: generated, and only present after a
+      // build, so linting them fails a second local gate run but never CI.
+      '**/dist-types/**',
       '**/build/**',
       '**/node_modules/**',
       'backend/public/**',

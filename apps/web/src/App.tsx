@@ -6,6 +6,7 @@ import type { Status } from './api.js';
 import { BookGrid } from './components/BookGrid.js';
 import { BatchEditor } from './components/BatchEditor.js';
 import { BookEditor } from './components/BookEditor.js';
+import { SettingsButton } from './components/SettingsButton.js';
 import { Toolbar } from './components/Toolbar.js';
 import type { LibraryView } from './library-view.js';
 import { scanLabel } from './scan-label.js';
@@ -192,6 +193,7 @@ export function App(): JSX.Element {
             {status?.library.scanning ? ` · ${currentScanLabel.toLowerCase()}` : ''}
           </span>
         </h1>
+        <SettingsButton />
       </header>
 
       <Toolbar

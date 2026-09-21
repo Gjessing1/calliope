@@ -76,6 +76,42 @@ button {
   padding: max(16px, env(safe-area-inset-top)) 16px calc(24px + env(safe-area-inset-bottom));
 }
 
+/* The Settings button sits beside the title only in the Android app; the
+   browser has no settings and renders nothing there. */
+.masthead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.settings-button {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 12px;
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-size: 0.9rem;
+}
+
+.settings-button svg {
+  width: 18px;
+  height: 18px;
+}
+
+.settings-button .attention {
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  width: 10px;
+  height: 10px;
+  border: 2px solid var(--bg);
+  border-radius: 50%;
+  background: var(--accent);
+}
+
 .masthead h1 {
   font-size: 1.9rem;
   letter-spacing: -0.01em;
@@ -339,17 +375,6 @@ button.card:hover:not(:disabled) {
   margin-top: 16px;
 }
 
-.native-settings {
-  position: fixed;
-  z-index: 8;
-  top: max(10px, env(safe-area-inset-top));
-  right: 12px;
-  padding: 5px 9px;
-  color: var(--ink-soft);
-  font-family: ui-sans-serif, system-ui, sans-serif;
-  font-size: 0.72rem;
-}
-
 .native-update {
   position: fixed;
   z-index: 30;
@@ -371,14 +396,10 @@ button.card:hover:not(:disabled) {
   font-size: 0.85rem;
 }
 
-.forget-device {
-  position: fixed;
-  z-index: 41;
-  right: 32px;
-  bottom: calc(24px + env(safe-area-inset-bottom));
-  color: var(--error-ink);
-  font-family: ui-sans-serif, system-ui, sans-serif;
-  font-size: 0.8rem;
+.native-update-actions {
+  display: flex;
+  flex: none;
+  gap: 6px;
 }
 
 .sheet-backdrop {
@@ -474,6 +495,61 @@ button.card:hover:not(:disabled) {
   margin-right: 7px;
   border-radius: 50%;
   background: var(--accent);
+}
+
+.sheet.settings {
+  width: min(480px, 100%);
+  font-family: ui-sans-serif, system-ui, sans-serif;
+}
+
+.settings-section {
+  padding: 16px 0 8px;
+}
+
+.settings-section + .settings-section {
+  border-top: 1px solid var(--line);
+}
+
+.settings-section h3 {
+  margin: 0 0 8px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+
+.settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 0;
+  font-size: 0.9rem;
+}
+
+.settings-row > div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.settings-row button {
+  flex: none;
+}
+
+.settings-detail {
+  color: var(--ink-soft);
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.settings-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 8px 0;
 }
 
 .sheet-head h2 {
