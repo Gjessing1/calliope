@@ -7,13 +7,14 @@ import { BookGrid } from './components/BookGrid.js';
 import { BatchEditor } from './components/BatchEditor.js';
 import { BookEditor } from './components/BookEditor.js';
 import { Toolbar } from './components/Toolbar.js';
+import type { LibraryView } from './library-view.js';
 
 export function App(): JSX.Element {
   const [books, setBooks] = useState<MergedBook[]>([]);
   const [total, setTotal] = useState(0);
   const [status, setStatus] = useState<Status | null>(null);
   const [search, setSearch] = useState('');
-  const [sort, setSort] = useState('title');
+  const [view, setView] = useState<LibraryView>('title');
   const [driftOnly, setDriftOnly] = useState(false);
   const [driftCount, setDriftCount] = useState(0);
   const [selected, setSelected] = useState<MergedBook | null>(null);
@@ -31,8 +32,18 @@ export function App(): JSX.Element {
 
   const reload = useCallback(async () => {
     try {
-      const page = await api.library({ search, sort, drift: driftOnly });
-      setBooks(page.books);
+      // Group headings must describe the whole result, not whichever 200 books
+      // happened to fit in the API's default page. A personal library remains
+      // small enough to load, while the loop still respects the API page cap.
+      const params = { search, sort: view, drift: driftOnly, limit: 1000 };
+      const page = await api.library(params);
+      const loaded = [...page.books];
+      while (loaded.length < page.total) {
+        const next = await api.library({ ...params, offset: loaded.length });
+        if (next.books.length === 0) break;
+        loaded.push(...next.books);
+      }
+      setBooks(loaded);
       setTotal(page.total);
       setError(null);
       // How many books disagree with ABS, whatever the search: the count is
@@ -46,7 +57,7 @@ export function App(): JSX.Element {
     } finally {
       setLoading(false);
     }
-  }, [search, sort, driftOnly]);
+  }, [search, view, driftOnly]);
 
   // Debounced: the search box filters as the user types, and one request per
   // keystroke over a large library is wasted work on both ends.
@@ -162,7 +173,7 @@ export function App(): JSX.Element {
     setBooks((current) => current.map((b) => (b.id === book.id ? book : b)));
     setSelected(book);
     // A save moves the book in a "recently modified" list; refetch for the order.
-    if (sort === 'modified') void reload();
+    if (view === 'modified') void reload();
   };
 
   return (
@@ -179,9 +190,9 @@ export function App(): JSX.Element {
 
       <Toolbar
         search={search}
-        sort={sort}
+        view={view}
         onSearch={setSearch}
-        onSort={setSort}
+        onView={setView}
         onScan={onScan}
         scanning={Boolean(status?.library.scanning)}
         selecting={selecting}
@@ -239,7 +250,7 @@ export function App(): JSX.Element {
       ) : (
         <BookGrid
           books={books}
-          sort={sort}
+          view={view}
           onSelect={setSelected}
           selecting={selecting}
           selected={selection}
@@ -299,7 +310,7 @@ export function App(): JSX.Element {
           book={selected}
           absPublicUrl={status?.audiobookshelf.publicUrl ?? null}
           onClose={() => setSelected(null)}
-          onSaved={onSaved}
+          onBookUpdated={onSaved}
           onAbsRefreshed={async () => {
             await reload();
             setSelected(await api.book(selected.id));

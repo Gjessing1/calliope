@@ -8,5 +8,7 @@ export type { ScanOptions } from './scan.js';
 export { AbsClient } from './abs.js';
 export type { AbsConfig } from './abs.js';
 export { absDifferences, absDrift, mergeAbs } from './merge.js';
+export { absMetadataPatch } from './abs-update.js';
+export type { AbsField, AbsMetadataPatch } from './abs-update.js';
 export { planBatch } from './batch.js';
 export type { PlannedBook } from './batch.js';

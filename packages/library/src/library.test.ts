@@ -10,6 +10,7 @@ import { AbsClient } from './abs.js';
 import { CoverCache } from './covers.js';
 import { LibraryIndex, ftsQuery } from './index-db.js';
 import { absDifferences, absDrift } from './merge.js';
+import { absMetadataPatch } from './abs-update.js';
 import { RevisionStore } from './revisions.js';
 import { findEpubs, scanLibrary } from './scan.js';
 
@@ -288,6 +289,36 @@ describe('LibraryIndex', () => {
     index.close();
   });
 
+  it('orders browse views by author sort name and numeric series position', () => {
+    const index = new LibraryIndex(':memory:');
+    const leGuin = makeBook('A Wizard of Earthsea', 'Ursula K. Le Guin', 'Earthsea');
+    leGuin.metadata.authors[0]!.fileAs = 'Le Guin, Ursula K.';
+    leGuin.metadata.seriesIndex = '1';
+    const asimov = makeBook('Foundation', 'Isaac Asimov', 'Foundation');
+    asimov.metadata.authors[0]!.fileAs = 'Asimov, Isaac';
+    asimov.metadata.seriesIndex = '10';
+    const second = makeBook('Foundation and Empire', 'Isaac Asimov', 'Foundation');
+    second.metadata.authors[0]!.fileAs = 'Asimov, Isaac';
+    second.metadata.seriesIndex = '2';
+    const standalone = makeBook('Authorless', '');
+
+    for (const book of [leGuin, asimov, second, standalone]) index.upsert(book);
+
+    expect(index.list({ sort: 'author' }).map((book) => book.metadata.title)).toEqual([
+      'Foundation',
+      'Foundation and Empire',
+      'A Wizard of Earthsea',
+      'Authorless',
+    ]);
+    expect(index.list({ sort: 'series' }).map((book) => book.metadata.title)).toEqual([
+      'A Wizard of Earthsea',
+      'Foundation and Empire',
+      'Foundation',
+      'Authorless',
+    ]);
+    index.close();
+  });
+
   // The sort comes from a query string and is interpolated into SQL.
   it('falls back to title order for an unknown sort', () => {
     const index = new LibraryIndex(':memory:');
@@ -443,6 +474,28 @@ describe('absDrift', () => {
     const [difference] = absDifferences(book, { ...abs, language: 'German' });
     expect(difference).toMatchObject({ field: 'language', abs: 'German', adopt: null });
   });
+
+  it('maps only selected file fields into Audiobookshelf metadata', () => {
+    const metadata = {
+      ...book.metadata,
+      subtitle: 'A Novel',
+      series: 'Classics',
+      seriesIndex: '3',
+      identifier: '9780805209990',
+    };
+    expect(absMetadataPatch(metadata, ['title', 'series'])).toEqual({
+      title: 'The Trial',
+      subtitle: 'A Novel',
+      series: [{ name: 'Classics', sequence: '3' }],
+    });
+    expect(absMetadataPatch(metadata, ['date', 'authors', 'identifier', 'language'])).toEqual({
+      publishedYear: '1925',
+      publishedDate: '1925-01-01',
+      authors: [{ name: 'Franz Kafka' }],
+      isbn: '9780805209990',
+      language: 'en',
+    });
+  });
 });
 
 // Response shapes below are ABS 2.33.1's, read from its server source: the
@@ -564,5 +617,25 @@ describe('AbsClient', () => {
     });
 
     await expect(client().rescanAll()).rejects.toThrow('responded 403');
+  });
+
+  it('updates only the selected Audiobookshelf metadata', async () => {
+    serve({
+      'PATCH /api/items/li_1/media': (init) => {
+        expect(JSON.parse(String(init?.body))).toEqual({
+          metadata: { title: 'The Trial', subtitle: null },
+        });
+        return Response.json({
+          id: 'li_1',
+          libraryId: 'lib',
+          path: '/books/The Trial',
+          media: { metadata: { title: 'The Trial', authors: [{ name: 'Franz Kafka' }] } },
+        });
+      },
+    });
+
+    await expect(
+      client().updateMetadata('li_1', { title: 'The Trial', subtitle: null }),
+    ).resolves.toMatchObject({ id: 'li_1', title: 'The Trial', authors: ['Franz Kafka'] });
   });
 });

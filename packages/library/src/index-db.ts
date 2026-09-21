@@ -171,11 +171,18 @@ export class LibraryIndex {
     // json_extract keeps the sort in SQLite rather than pulling every row into
     // JS to sort it, which is the whole reason the index exists.
     const byTitle = "json_extract(metadata, '$.title') COLLATE NOCASE";
+    const byAuthor =
+      "COALESCE(NULLIF(TRIM(json_extract(metadata, '$.authors[0].fileAs')), ''), TRIM(json_extract(metadata, '$.author')), '')";
+    const bySeries = "TRIM(COALESCE(json_extract(metadata, '$.series'), ''))";
+    const bySeriesIndex = "TRIM(COALESCE(json_extract(metadata, '$.seriesIndex'), ''))";
     const orders: Record<LibrarySort, string> = {
       title: byTitle,
-      author: "json_extract(metadata, '$.author') COLLATE NOCASE",
-      series:
-        "json_extract(metadata, '$.series') COLLATE NOCASE, json_extract(metadata, '$.seriesIndex')",
+      // Sort names put "Le Guin, Ursula" under L when the EPUB provides one.
+      // Missing metadata belongs at the end of a browse view, not before A.
+      author: `CASE WHEN ${byAuthor} = '' THEN 1 ELSE 0 END, ${byAuthor} COLLATE NOCASE, ${byTitle}`,
+      series: `CASE WHEN ${bySeries} = '' THEN 1 ELSE 0 END, ${bySeries} COLLATE NOCASE,
+        CASE WHEN ${bySeriesIndex} = '' THEN 2 WHEN ${bySeriesIndex} NOT GLOB '*[^0-9.]*' THEN 0 ELSE 1 END,
+        CAST(${bySeriesIndex} AS REAL), ${bySeriesIndex} COLLATE NOCASE, ${byTitle}`,
       // Newest first; title breaks ties so a batch copied in together keeps a
       // stable, readable order.
       added: `added_at DESC, ${byTitle}`,

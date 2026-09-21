@@ -1,6 +1,8 @@
 import type { FastifyInstance } from 'fastify';
 import type { BookMetadata, MetadataUpdate } from '@calliope/core';
 import type { LibrarySort } from '@calliope/library';
+import { absMetadataPatch } from '@calliope/library';
+import type { AbsField } from '@calliope/library';
 import { getCoverBuffer, normalizeMetadata, optimizeCover, readEpub } from '@calliope/epub';
 import { fetchCoverImage } from '@calliope/metadata';
 import type { AppState } from '../state.js';
@@ -24,6 +26,16 @@ interface SaveBody {
   expectedMtimeMs?: number;
   expectedFileSize?: number;
 }
+
+const ABS_FIELDS = new Set<AbsField>([
+  'title',
+  'authors',
+  'series',
+  'publisher',
+  'date',
+  'identifier',
+  'language',
+]);
 
 const COVER_DATA = /^data:image\/(?:jpeg|png|webp|avif);base64,([A-Za-z0-9+/=]+)$/;
 
@@ -85,6 +97,40 @@ export function libraryRoutes(app: FastifyInstance, state: AppState): void {
     if (!book) return reply.code(404).send({ error: 'No such book' });
     return state.merge(book);
   });
+
+  app.patch<{ Params: { id: string }; Body: { fields?: string[] } }>(
+    '/api/books/:id/audiobookshelf',
+    async (req, reply) => {
+      if (!state.abs) {
+        return reply.code(404).send({ error: 'Audiobookshelf is not configured' });
+      }
+      const book = state.index.get(req.params.id);
+      if (!book) return reply.code(404).send({ error: 'No such book' });
+      const abs = state.index.getAbs(book.id);
+      if (!abs) return reply.code(404).send({ error: 'This book is not linked to Audiobookshelf' });
+
+      const requested = req.body?.fields;
+      if (
+        !Array.isArray(requested) ||
+        requested.length === 0 ||
+        requested.some((field) => !ABS_FIELDS.has(field as AbsField))
+      ) {
+        return reply.code(400).send({ error: 'Choose at least one supported metadata field' });
+      }
+      const fields = requested as AbsField[];
+
+      try {
+        const updated = await state.abs.updateMetadata(
+          abs.id,
+          absMetadataPatch(book.metadata, fields),
+        );
+        state.index.putAbs(book.id, updated);
+        return { updated: true, book: state.merge(book) };
+      } catch (error) {
+        return reply.code(502).send({ error: (error as Error).message });
+      }
+    },
+  );
 
   app.get<{ Params: { id: string } }>('/api/books/:id/cover', async (req, reply) => {
     const cover = await state.covers.get(req.params.id);

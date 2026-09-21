@@ -20,7 +20,7 @@ interface BookEditorProps {
   /** Audiobookshelf as a browser reaches it, for a link to this book there. */
   absPublicUrl: string | null;
   onClose: () => void;
-  onSaved: (book: MergedBook) => void;
+  onBookUpdated: (book: MergedBook) => void;
   /** After Audiobookshelf was re-read: reload this book's comparison. */
   onAbsRefreshed: () => Promise<void>;
 }
@@ -59,7 +59,8 @@ type Confirmation =
   | { kind: 'save' }
   | { kind: 'discard' }
   | { kind: 'close' }
-  | { kind: 'restore'; revision: BookRevision };
+  | { kind: 'restore'; revision: BookRevision }
+  | { kind: 'sync-abs'; differences: AbsDifference[] };
 
 /** The draft as it stood before a lookup match was loaded into it. */
 interface MatchBase {
@@ -157,7 +158,7 @@ export function BookEditor({
   book,
   absPublicUrl,
   onClose,
-  onSaved,
+  onBookUpdated,
   onAbsRefreshed,
 }: BookEditorProps): JSX.Element {
   const [form, setForm] = useState<MetadataUpdate>(() => metadataForm(book.metadata));
@@ -388,7 +389,7 @@ export function BookEditor({
       const result = await api.save(book.id, form, book.mtimeMs, book.fileSize, coverPayload());
       resetDraft(result.book.metadata);
       setComparing(null);
-      onSaved(result.book);
+      onBookUpdated(result.book);
       await reloadRevisions();
       setMessage(
         [
@@ -407,7 +408,7 @@ export function BookEditor({
       const result = await api.restore(book.id, revision.id, book.mtimeMs, book.fileSize);
       resetDraft(result.book.metadata);
       setComparing(null);
-      onSaved(result.book);
+      onBookUpdated(result.book);
       await reloadRevisions();
       setMessage('Restored. The file you just replaced was saved as a new history entry.');
     });
@@ -462,6 +463,20 @@ export function BookEditor({
       setMessage('Audiobookshelf re-read.');
     });
 
+  const syncAbs = (selectedDifferences: AbsDifference[]): Promise<void> =>
+    run('abs-write', async () => {
+      const result = await api.useFileMetadataInAbs(
+        book.id,
+        selectedDifferences.map(({ field }) => field),
+      );
+      onBookUpdated(result.book);
+      setMessage(
+        `Audiobookshelf now uses this file’s ${selectedDifferences
+          .map(({ label }) => label.toLowerCase())
+          .join(', ')}.`,
+      );
+    });
+
   const differences = book.absDifferences ?? [];
   const pendingAbs = differences.filter((d) => d.adopt && !adopted(form, d));
   const absLink = absPublicUrl && book.abs ? `${absPublicUrl}/item/${book.abs.id}` : null;
@@ -474,6 +489,7 @@ export function BookEditor({
     if (action.kind === 'discard') discard();
     if (action.kind === 'save') void save();
     if (action.kind === 'restore') void restore(action.revision);
+    if (action.kind === 'sync-abs') void syncAbs(action.differences);
   };
 
   const currentCover = book.hasCover ? api.coverUrl(book.id, book.mtimeMs) : null;
@@ -536,9 +552,8 @@ export function BookEditor({
                 </h3>
               </div>
               <p className="hint">
-                For each field, take Audiobookshelf’s value into the draft, or keep the file’s. To
-                keep the file’s, change it in Audiobookshelf too: it shows its own copy until you
-                do.
+                Choose which side is right for each field. Taking Audiobookshelf’s value stages an
+                EPUB draft; taking this file’s value updates Audiobookshelf after confirmation.
               </p>
               <ul>
                 {differences.map((d) => {
@@ -569,10 +584,23 @@ export function BookEditor({
                             </button>
                           </>
                         ) : (
-                          <button type="button" className="small" onClick={() => adoptAbs([d])}>
+                          <button
+                            type="button"
+                            className="small"
+                            onClick={() => adoptAbs([d])}
+                            disabled={busy !== null}
+                          >
                             Use Audiobookshelf’s
                           </button>
                         )}
+                        <button
+                          type="button"
+                          className="small"
+                          onClick={() => setConfirmation({ kind: 'sync-abs', differences: [d] })}
+                          disabled={busy !== null}
+                        >
+                          Use this file’s {d.label.toLowerCase()}
+                        </button>
                       </div>
                     </li>
                   );
@@ -580,8 +608,23 @@ export function BookEditor({
               </ul>
               <div className="drift-foot">
                 {pendingAbs.length > 1 && (
-                  <button type="button" className="small" onClick={() => adoptAbs(pendingAbs)}>
+                  <button
+                    type="button"
+                    className="small"
+                    onClick={() => adoptAbs(pendingAbs)}
+                    disabled={busy !== null}
+                  >
                     Use all of Audiobookshelf’s
+                  </button>
+                )}
+                {differences.length > 1 && (
+                  <button
+                    type="button"
+                    className="small"
+                    onClick={() => setConfirmation({ kind: 'sync-abs', differences })}
+                    disabled={busy !== null}
+                  >
+                    Use all of this file’s
                   </button>
                 )}
                 {absLink && (
@@ -1016,11 +1059,13 @@ export function BookEditor({
             <span className={changeCount > 0 ? 'draft-status dirty' : 'draft-status'}>
               {busy === 'save'
                 ? 'Writing to the file…'
-                : busy === 'restore'
-                  ? 'Restoring…'
-                  : changeCount === 0
-                    ? 'No unsaved changes'
-                    : plural(changeCount, 'unsaved change')}
+                : busy === 'abs-write'
+                  ? 'Updating Audiobookshelf…'
+                  : busy === 'restore'
+                    ? 'Restoring…'
+                    : changeCount === 0
+                      ? 'No unsaved changes'
+                      : plural(changeCount, 'unsaved change')}
             </span>
             <button
               type="button"
@@ -1057,7 +1102,9 @@ export function BookEditor({
                     ? 'Discard these changes?'
                     : confirmation.kind === 'restore'
                       ? 'Restore this earlier file?'
-                      : 'Discard this draft?'}
+                      : confirmation.kind === 'sync-abs'
+                        ? 'Use this file’s metadata in Audiobookshelf?'
+                        : 'Discard this draft?'}
               </h3>
 
               {confirmation.kind === 'save' && (
@@ -1100,6 +1147,23 @@ export function BookEditor({
                 </>
               )}
 
+              {confirmation.kind === 'sync-abs' && (
+                <>
+                  <p>
+                    This changes Audiobookshelf’s copy of the selected metadata. The EPUB and any
+                    unsaved draft stay unchanged.
+                  </p>
+                  <dl className="abs-sync-summary">
+                    {confirmation.differences.map((difference) => (
+                      <div key={difference.field}>
+                        <dt>{difference.label}</dt>
+                        <dd>{difference.file || <em>Empty</em>}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                </>
+              )}
+
               <div className="dialog-actions">
                 <button type="button" onClick={() => setConfirmation(null)} autoFocus>
                   {confirmation.kind === 'close' ? 'Keep editing' : 'Cancel'}
@@ -1119,7 +1183,9 @@ export function BookEditor({
                       ? 'Discard changes'
                       : confirmation.kind === 'restore'
                         ? 'Restore this version'
-                        : 'Discard and close'}
+                        : confirmation.kind === 'sync-abs'
+                          ? 'Update Audiobookshelf'
+                          : 'Discard and close'}
                 </button>
               </div>
             </section>

@@ -106,6 +106,12 @@ export const api = {
 
   book: (id: string) => request<MergedBook>(`/api/books/${id}`),
 
+  useFileMetadataInAbs: (id: string, fields: string[]) =>
+    request<{ updated: true; book: MergedBook }>(`/api/books/${id}/audiobookshelf`, {
+      method: 'PATCH',
+      body: JSON.stringify({ fields }),
+    }),
+
   refreshAbs: () => request<{ refreshed: true }>('/api/abs/refresh', { method: 'POST' }),
 
   scan: (force = false) =>

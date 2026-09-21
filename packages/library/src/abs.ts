@@ -1,4 +1,5 @@
 import type { AbsBook } from '@calliope/core';
+import type { AbsMetadataPatch } from './abs-update.js';
 
 export interface AbsConfig {
   /** Origin of the Audiobookshelf server, e.g. `http://audiobookshelf:80`. */
@@ -134,6 +135,19 @@ export class AbsClient {
       }
     }
     return merged;
+  }
+
+  /** Explicitly replace selected ABS metadata fields with values from the EPUB. */
+  async updateMetadata(itemId: string, metadata: AbsMetadataPatch): Promise<AbsBook> {
+    const item = await this.request<AbsLibraryItem>(
+      `/api/items/${encodeURIComponent(itemId)}/media`,
+      {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ metadata }),
+      },
+    );
+    return toAbsBook(item);
   }
 
   /**

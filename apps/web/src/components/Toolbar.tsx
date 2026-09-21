@@ -1,7 +1,8 @@
 import type { JSX } from 'react';
+import type { LibraryView } from '../library-view.js';
 interface ToolbarProps {
   search: string;
-  sort: string;
+  view: LibraryView;
   scanning: boolean;
   selecting: boolean;
   onSelecting: (on: boolean) => void;
@@ -10,13 +11,13 @@ interface ToolbarProps {
   driftOnly: boolean;
   onDriftOnly: (on: boolean) => void;
   onSearch: (value: string) => void;
-  onSort: (value: string) => void;
+  onView: (value: LibraryView) => void;
   onScan: () => void | Promise<void>;
 }
 
 export function Toolbar({
   search,
-  sort,
+  view,
   scanning,
   selecting,
   onSelecting,
@@ -24,7 +25,7 @@ export function Toolbar({
   driftOnly,
   onDriftOnly,
   onSearch,
-  onSort,
+  onView,
   onScan,
 }: ToolbarProps): JSX.Element {
   return (
@@ -37,9 +38,13 @@ export function Toolbar({
         onChange={(e) => onSearch(e.target.value)}
         aria-label="Search the library"
       />
-      <select value={sort} onChange={(e) => onSort(e.target.value)} aria-label="Sort by">
-        <option value="title">Title</option>
-        <option value="author">Author</option>
+      <select
+        value={view}
+        onChange={(event) => onView(event.target.value as LibraryView)}
+        aria-label="Library view"
+      >
+        <option value="title">Titles</option>
+        <option value="author">Authors</option>
         <option value="series">Series</option>
         <option value="added">Recently added</option>
         <option value="modified">Recently modified</option>
