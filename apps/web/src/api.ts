@@ -60,6 +60,18 @@ async function request<T>(pathname: string, init?: RequestInit, token = deviceTo
   return (await res.json()) as T;
 }
 
+/**
+ * An API image as bytes, fetched with the device token. An `<img src>` cannot
+ * send an Authorization header, so on Android it reaches the SSO gateway
+ * instead of the backend and gets a login page back — a broken image.
+ */
+export async function fetchImage(url: string): Promise<Blob> {
+  const token = deviceToken();
+  const res = await fetch(url, token ? { headers: { Authorization: `Bearer ${token}` } } : {});
+  if (!res.ok) throw new ApiError(res.status, `Image request failed (${res.status})`);
+  return res.blob();
+}
+
 export async function connectDeviceToken(token: string): Promise<void> {
   const candidate = token.trim();
   if (!candidate) throw new Error('Enter the device token from the Calliope server.');

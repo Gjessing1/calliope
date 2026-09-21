@@ -2,6 +2,7 @@ import type { JSX } from 'react';
 import type { BookRevision, FieldChange, MergedBook } from '@calliope/core';
 import { diffWords, metadataChanges } from '@calliope/core';
 import { api } from '../api.js';
+import { ApiImage } from './ApiImage.js';
 
 /**
  * Short values read best as "old → new". A long one (a description, a long
@@ -54,7 +55,11 @@ interface CoverPairProps {
 export function CoverPair({ before, after, beforeLabel, afterLabel }: CoverPairProps): JSX.Element {
   const side = (src: string | null, label: string): JSX.Element => (
     <figure>
-      {src ? <img src={src} alt="" loading="lazy" /> : <span className="no-cover">No cover</span>}
+      {src ? (
+        <ApiImage src={src} alt="" loading="lazy" />
+      ) : (
+        <span className="no-cover">No cover</span>
+      )}
       <figcaption>{label}</figcaption>
     </figure>
   );

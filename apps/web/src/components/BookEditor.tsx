@@ -13,6 +13,7 @@ import type {
 } from '@calliope/core';
 import { metadataChanges } from '@calliope/core';
 import { api } from '../api.js';
+import { ApiImage } from './ApiImage.js';
 import { ChangeList, CoverPair, RevisionDiff, revisionSummary } from './ChangeList.js';
 
 interface BookEditorProps {
@@ -935,7 +936,7 @@ export function BookEditor({
             ) : (
               <div className="current-cover">
                 {currentCover ? (
-                  <img src={currentCover} alt="Current embedded cover" />
+                  <ApiImage src={currentCover} alt="Current embedded cover" />
                 ) : (
                   <span className="no-cover">No embedded cover</span>
                 )}
@@ -961,7 +962,7 @@ export function BookEditor({
                       }
                       title={`${cover.source} — ${cover.description}`}
                     >
-                      <img
+                      <ApiImage
                         src={api.proxiedCover(cover.url)}
                         alt={cover.description}
                         loading="lazy"
@@ -989,7 +990,7 @@ export function BookEditor({
                       <div className="history-entry">
                         <div className="history-cover">
                           {revision.hasCover ? (
-                            <img
+                            <ApiImage
                               src={api.revisionCoverUrl(book.id, revision.id)}
                               alt=""
                               loading="lazy"

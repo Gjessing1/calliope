@@ -1,6 +1,7 @@
 import type { JSX, MouseEvent } from 'react';
 import type { MergedBook } from '@calliope/core';
 import { api } from '../api.js';
+import { ApiImage } from './ApiImage.js';
 import { groupBooks } from '../library-view.js';
 import type { LibraryView } from '../library-view.js';
 
@@ -47,7 +48,7 @@ export function BookGrid({
           >
             <span className="cover">
               {book.hasCover ? (
-                <img src={api.coverUrl(book.id, book.mtimeMs)} alt="" loading="lazy" />
+                <ApiImage src={api.coverUrl(book.id, book.mtimeMs)} alt="" loading="lazy" />
               ) : (
                 <span className="cover-placeholder" aria-hidden="true">
                   {book.metadata.title.slice(0, 1) || '?'}
