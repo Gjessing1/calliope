@@ -1,9 +1,10 @@
 import type { JSX } from 'react';
 import { useCallback, useEffect, useState } from 'react';
-import type { MergedBook } from '@calliope/core';
+import type { BatchJob, MergedBook } from '@calliope/core';
 import { api } from './api.js';
 import type { Status } from './api.js';
 import { BookGrid } from './components/BookGrid.js';
+import { BatchEditor } from './components/BatchEditor.js';
 import { BookEditor } from './components/BookEditor.js';
 import { Toolbar } from './components/Toolbar.js';
 
@@ -13,22 +14,39 @@ export function App(): JSX.Element {
   const [status, setStatus] = useState<Status | null>(null);
   const [search, setSearch] = useState('');
   const [sort, setSort] = useState('title');
+  const [driftOnly, setDriftOnly] = useState(false);
+  const [driftCount, setDriftCount] = useState(0);
   const [selected, setSelected] = useState<MergedBook | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  // Selection survives a change of search, so a batch can be gathered from
+  // several searches ("Kafka", then "Hamsun"). Kept as book objects because a
+  // selected book may be filtered out of the grid by the current search.
+  const [selecting, setSelecting] = useState(false);
+  const [selection, setSelection] = useState<Map<string, MergedBook>>(new Map());
+  const [anchor, setAnchor] = useState<string | null>(null);
+  const [batchOpen, setBatchOpen] = useState(false);
+  const [job, setJob] = useState<BatchJob | null>(null);
+  const [dismissedJob, setDismissedJob] = useState<string | null>(null);
 
   const reload = useCallback(async () => {
     try {
-      const page = await api.library({ search, sort });
+      const page = await api.library({ search, sort, drift: driftOnly });
       setBooks(page.books);
       setTotal(page.total);
       setError(null);
+      // How many books disagree with ABS, whatever the search: the count is
+      // what tells a person there is something to review at all.
+      const differing = driftOnly
+        ? page.total
+        : (await api.library({ drift: true, limit: 1 }).catch(() => null))?.total;
+      if (differing !== undefined) setDriftCount(differing);
     } catch (err) {
       setError((err as Error).message);
     } finally {
       setLoading(false);
     }
-  }, [search, sort]);
+  }, [search, sort, driftOnly]);
 
   // Debounced: the search box filters as the user types, and one request per
   // keystroke over a large library is wasted work on both ends.
@@ -59,9 +77,85 @@ export function App(): JSX.Element {
     return () => clearInterval(timer);
   }, [status?.library.scanning, reload]);
 
+  // Keep the selected books' records current after a reload (a batch just
+  // changed their mtimes and metadata).
+  useEffect(() => {
+    setSelection((current) => {
+      if (current.size === 0) return current;
+      const next = new Map(current);
+      for (const book of books) if (next.has(book.id)) next.set(book.id, book);
+      return next;
+    });
+  }, [books]);
+
+  // A batch runs on the server whether or not its sheet is open, and may have
+  // been started before this page loaded.
+  useEffect(() => {
+    void api
+      .batch()
+      .then(({ job: current }) => {
+        if (current && !current.finishedAt) setJob(current);
+      })
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (!job || job.finishedAt) return;
+    const timer = setInterval(() => {
+      void api
+        .batch()
+        .then(({ job: next }) => {
+          setJob(next);
+          if (next?.finishedAt) void reload();
+        })
+        .catch(() => {});
+    }, 700);
+    return () => clearInterval(timer);
+  }, [job?.id, job?.finishedAt, reload]);
+
+  const toggle = (book: MergedBook, range: boolean): void => {
+    setSelecting(true);
+    setSelection((current) => {
+      const next = new Map(current);
+      const from = anchor ? books.findIndex((b) => b.id === anchor) : -1;
+      const to = books.findIndex((b) => b.id === book.id);
+      if (range && from >= 0 && to >= 0) {
+        for (const b of books.slice(Math.min(from, to), Math.max(from, to) + 1)) next.set(b.id, b);
+      } else if (next.has(book.id)) {
+        next.delete(book.id);
+      } else {
+        next.set(book.id, book);
+      }
+      return next;
+    });
+    setAnchor(book.id);
+  };
+
+  const stopSelecting = (): void => {
+    setSelecting(false);
+    setSelection(new Map());
+    setAnchor(null);
+  };
+
+  useEffect(() => {
+    if (!selecting || batchOpen || selected) return;
+    const onKey = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') stopSelecting();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [selecting, batchOpen, selected]);
+
+  const shownSelected = books.filter((book) => selection.has(book.id)).length;
+  const hiddenSelected = selection.size - shownSelected;
+
   const onScan = async (): Promise<void> => {
-    await api.scan();
-    setStatus(await api.status());
+    try {
+      await api.scan();
+      setStatus(await api.status());
+    } catch (err) {
+      setError(`Could not start a scan: ${(err as Error).message}`);
+    }
   };
 
   const onSaved = (book: MergedBook): void => {
@@ -90,6 +184,11 @@ export function App(): JSX.Element {
         onSort={setSort}
         onScan={onScan}
         scanning={Boolean(status?.library.scanning)}
+        selecting={selecting}
+        onSelecting={(on) => (on ? setSelecting(true) : stopSelecting())}
+        driftCount={status?.audiobookshelf.configured ? driftCount : 0}
+        driftOnly={driftOnly}
+        onDriftOnly={setDriftOnly}
       />
 
       {error && <p className="banner banner-error">{error}</p>}
@@ -99,18 +198,113 @@ export function App(): JSX.Element {
         </p>
       )}
 
+      {job && !batchOpen && job.id !== dismissedJob && (
+        <div className="banner batch-banner" role="status">
+          {job.finishedAt ? (
+            <span>
+              “{job.label}” finished: {job.results.filter((r) => r.status === 'saved').length} of{' '}
+              {job.total} written
+              {job.results.some((r) => r.status !== 'saved') &&
+                ' — open the batch again to see what was skipped'}
+              .
+            </span>
+          ) : (
+            <span>
+              Writing “{job.label}”: {job.results.length} of {job.total}…
+            </span>
+          )}
+          {job.finishedAt && (
+            <button
+              type="button"
+              className="icon"
+              aria-label="Dismiss"
+              onClick={() => setDismissedJob(job.id)}
+            >
+              ×
+            </button>
+          )}
+        </div>
+      )}
+
       {loading ? (
         <p className="empty">Loading the library…</p>
       ) : books.length === 0 ? (
         <p className="empty">
-          {search ? `Nothing matches “${search}”.` : 'No books found. Try a scan.'}
+          {driftOnly
+            ? 'Every book agrees with Audiobookshelf.'
+            : search
+              ? `Nothing matches “${search}”.`
+              : 'No books found. Try a scan.'}
         </p>
       ) : (
-        <BookGrid books={books} sort={sort} onSelect={setSelected} />
+        <BookGrid
+          books={books}
+          sort={sort}
+          onSelect={setSelected}
+          selecting={selecting}
+          selected={selection}
+          onToggle={toggle}
+        />
+      )}
+
+      {selecting && (
+        <div className="selection-bar" role="region" aria-label="Selection">
+          <span className="selection-count">
+            {selection.size === 0 ? 'Tap books to select them' : `${selection.size} selected`}
+            {hiddenSelected > 0 && <span className="hint"> · {hiddenSelected} not shown</span>}
+          </span>
+          <button
+            type="button"
+            onClick={() => {
+              setSelection((current) => {
+                const next = new Map(current);
+                for (const book of books) next.set(book.id, book);
+                return next;
+              });
+            }}
+            disabled={shownSelected === books.length}
+          >
+            {search ? 'Select all shown' : 'Select all'}
+          </button>
+          <button type="button" onClick={() => setSelection(new Map())} disabled={!selection.size}>
+            Clear
+          </button>
+          <button
+            type="button"
+            className="primary"
+            onClick={() => setBatchOpen(true)}
+            disabled={selection.size === 0}
+          >
+            Edit together…
+          </button>
+        </div>
+      )}
+
+      {batchOpen && (
+        <BatchEditor
+          books={[...selection.values()]}
+          library={books}
+          absConfigured={Boolean(status?.audiobookshelf.configured)}
+          job={job}
+          onStarted={setJob}
+          onClose={() => {
+            setBatchOpen(false);
+            if (job?.finishedAt) setDismissedJob(job.id);
+          }}
+        />
       )}
 
       {selected && (
-        <BookEditor book={selected} onClose={() => setSelected(null)} onSaved={onSaved} />
+        <BookEditor
+          book={selected}
+          absPublicUrl={status?.audiobookshelf.publicUrl ?? null}
+          onClose={() => setSelected(null)}
+          onSaved={onSaved}
+          onAbsRefreshed={async () => {
+            await reload();
+            setSelected(await api.book(selected.id));
+          }}
+        />
       )}
     </div>
   );

@@ -3,6 +3,7 @@ import type JSZip from 'jszip';
 import { Builder } from 'xml2js';
 import type { Author, MetadataUpdate } from '@calliope/core';
 import { normalizeLanguageCode } from './language.js';
+import { extractMetadata } from './read.js';
 import { sanitizeMetadataString } from './sanitize.js';
 import {
   attrsOf,
@@ -411,8 +412,9 @@ function writeSubjects(meta: OpfMetadataNode, updates: MetadataUpdate): void {
  * `collection-type` and `group-position` refinement); EPUB 2 has none, so the
  * de-facto Calibre `<meta name="calibre:series">` is used there instead.
  *
- * undefined leaves the series alone — in EPUB 3 too, where rebuilding it
- * unconditionally once wiped the series of every book a partial update touched.
+ * undefined leaves the series (or its number) alone — in EPUB 3 too, where
+ * rebuilding it unconditionally once wiped the series of every book a partial
+ * update touched. A series and number equal to the file's are not rewritten.
  * Setting one updates the first series collection in place, keeping its id and
  * anything else refining it; clearing removes every series collection. A `set`
  * collection is not a series and is never touched.
@@ -432,11 +434,17 @@ function writeSeries(
 ): void {
   meta.meta = meta.meta ?? [];
 
-  if (updates.series !== undefined) {
-    const series = sanitizeMetadataString(updates.series).trim();
-    const index =
-      updates.seriesIndex === undefined ? '' : sanitizeMetadataString(String(updates.seriesIndex));
+  // Name and number are separate fields to the caller: a batch that renames a
+  // series must not renumber it, and one that renumbers must not need the name.
+  const current = extractMetadata(meta);
+  const series =
+    updates.series === undefined ? current.series : sanitizeMetadataString(updates.series).trim();
+  const index =
+    updates.seriesIndex === undefined
+      ? current.seriesIndex
+      : sanitizeMetadataString(String(updates.seriesIndex)).trim();
 
+  if (series !== current.series || (series && index !== current.seriesIndex)) {
     const hadCalibre = meta.meta.some((m) => m.$?.name === 'calibre:series');
     meta.meta = meta.meta.filter(
       (m) => m.$?.name !== 'calibre:series' && m.$?.name !== 'calibre:series_index',

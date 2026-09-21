@@ -31,6 +31,9 @@ services:
       # Where the same library is mounted inside the ABS container — the join
       # key between the two systems is the path below this prefix.
       ABS_BOOKS_ROOT: /books
+      # ABS as a browser reaches it (its UI lives under /audiobookshelf), for
+      # "Open in Audiobookshelf" links. The URL above is container-internal.
+      ABS_PUBLIC_URL: https://ab.gjessing.io/audiobookshelf
     volumes:
       # Read-write: this is the whole point, metadata edits land in these files.
       - type: bind

@@ -1,6 +1,7 @@
 import type { ChangeEvent, JSX, ReactNode } from 'react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type {
+  AbsDifference,
   Author,
   BookMetadata,
   BookRevision,
@@ -16,9 +17,30 @@ import { ChangeList, CoverPair, RevisionDiff, revisionSummary } from './ChangeLi
 
 interface BookEditorProps {
   book: MergedBook;
+  /** Audiobookshelf as a browser reaches it, for a link to this book there. */
+  absPublicUrl: string | null;
   onClose: () => void;
   onSaved: (book: MergedBook) => void;
+  /** After Audiobookshelf was re-read: reload this book's comparison. */
+  onAbsRefreshed: () => Promise<void>;
 }
+
+/** Whether the draft already says what a difference's ABS value would set. */
+const adopted = (form: MetadataUpdate, difference: AbsDifference): boolean =>
+  !!difference.adopt &&
+  Object.entries(difference.adopt).every(
+    ([key, value]) =>
+      JSON.stringify(authorOrValue(form[key as keyof MetadataUpdate])) ===
+      JSON.stringify(authorOrValue(value)),
+  );
+
+/** Comparable form of a draft value: authors as objects, numbers as text. */
+const authorOrValue = (value: unknown): unknown =>
+  Array.isArray(value)
+    ? value.map((v) => (typeof v === 'string' ? { name: v, role: 'aut', fileAs: null } : v))
+    : typeof value === 'number'
+      ? String(value)
+      : (value ?? '');
 
 interface NormalizationSuggestion {
   key: keyof MetadataUpdate;
@@ -131,7 +153,13 @@ function Field({ label, changed, onRevert, className, children }: FieldProps): J
  * The editor always stages changes first. A save requires a second, explicit
  * review action, and the backend captures the old EPUB before accepting it.
  */
-export function BookEditor({ book, onClose, onSaved }: BookEditorProps): JSX.Element {
+export function BookEditor({
+  book,
+  absPublicUrl,
+  onClose,
+  onSaved,
+  onAbsRefreshed,
+}: BookEditorProps): JSX.Element {
   const [form, setForm] = useState<MetadataUpdate>(() => metadataForm(book.metadata));
   const [candidates, setCandidates] = useState<MetadataCandidate[]>([]);
   const [appliedMatch, setAppliedMatch] = useState<number | null>(null);
@@ -394,6 +422,50 @@ export function BookEditor({ book, onClose, onSaved }: BookEditorProps): JSX.Ele
     else onClose();
   };
 
+  // Escape backs out one layer: the confirmation first, then the editor (which
+  // still asks before throwing a draft away).
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent): void => {
+      if (event.key !== 'Escape' || busy) return;
+      if (confirmation) setConfirmation(null);
+      else if (changeCount > 0) setConfirmation({ kind: 'close' });
+      else onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [busy, confirmation, changeCount, onClose]);
+
+  // Taking Audiobookshelf's value stages it like a lookup match: it lands in the
+  // draft, marked as changed, and is only written after review.
+  const adoptAbs = (differences: AbsDifference[]): void => {
+    setMatchBase(null);
+    setMessage(null);
+    setForm((current) =>
+      differences.reduce((next, d) => (d.adopt ? { ...next, ...d.adopt } : next), current),
+    );
+  };
+
+  const undoAbs = (difference: AbsDifference): void => {
+    setForm((current) => {
+      const next = { ...current };
+      for (const key of Object.keys(difference.adopt ?? {}) as Array<keyof MetadataUpdate>) {
+        (next as Record<string, unknown>)[key] = original[key];
+      }
+      return next;
+    });
+  };
+
+  const recheckAbs = (): Promise<void> =>
+    run('abs', async () => {
+      await api.refreshAbs();
+      await onAbsRefreshed();
+      setMessage('Audiobookshelf re-read.');
+    });
+
+  const differences = book.absDifferences ?? [];
+  const pendingAbs = differences.filter((d) => d.adopt && !adopted(form, d));
+  const absLink = absPublicUrl && book.abs ? `${absPublicUrl}/item/${book.abs.id}` : null;
+
   const confirm = (): void => {
     const action = confirmation;
     setConfirmation(null);
@@ -455,11 +527,79 @@ export function BookEditor({ book, onClose, onSaved }: BookEditorProps): JSX.Ele
         </header>
 
         <div className="sheet-body">
-          {book.absDrift.length > 0 && (
-            <p className="banner banner-warn">
-              Audiobookshelf shows different {book.absDrift.join(', ')}. Saving here writes the
-              file; ABS keeps its override until you clear it there.
-            </p>
+          {differences.length > 0 && (
+            <section className="panel drift" aria-labelledby="drift-title">
+              <div className="panel-head">
+                <h3 id="drift-title">
+                  Audiobookshelf shows {differences.length === 1 ? 'a different' : 'different'}{' '}
+                  {differences.map((d) => d.label.toLowerCase()).join(', ')}
+                </h3>
+              </div>
+              <p className="hint">
+                For each field, take Audiobookshelf’s value into the draft, or keep the file’s. To
+                keep the file’s, change it in Audiobookshelf too: it shows its own copy until you
+                do.
+              </p>
+              <ul>
+                {differences.map((d) => {
+                  const inDraft = adopted(form, d);
+                  return (
+                    <li key={d.field} className={inDraft ? 'taken' : undefined}>
+                      <span className="drift-field">{d.label}</span>
+                      <dl className="drift-values">
+                        <div>
+                          <dt>This file</dt>
+                          <dd>{d.file || <em>Empty</em>}</dd>
+                        </div>
+                        <div>
+                          <dt>Audiobookshelf</dt>
+                          <dd>{d.abs}</dd>
+                        </div>
+                      </dl>
+                      <div className="drift-actions">
+                        {!d.adopt ? (
+                          <span className="hint">
+                            Not a value an EPUB can hold as it is; fix it in Audiobookshelf.
+                          </span>
+                        ) : inDraft ? (
+                          <>
+                            <em className="tag">In draft</em>
+                            <button type="button" className="quiet" onClick={() => undoAbs(d)}>
+                              Undo
+                            </button>
+                          </>
+                        ) : (
+                          <button type="button" className="small" onClick={() => adoptAbs([d])}>
+                            Use Audiobookshelf’s
+                          </button>
+                        )}
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+              <div className="drift-foot">
+                {pendingAbs.length > 1 && (
+                  <button type="button" className="small" onClick={() => adoptAbs(pendingAbs)}>
+                    Use all of Audiobookshelf’s
+                  </button>
+                )}
+                {absLink && (
+                  <a className="button small" href={absLink} target="_blank" rel="noreferrer">
+                    Open in Audiobookshelf ↗
+                  </a>
+                )}
+                <button
+                  type="button"
+                  className="small quiet"
+                  onClick={() => void recheckAbs()}
+                  disabled={busy !== null}
+                  title="Read Audiobookshelf again, after changing the book there"
+                >
+                  {busy === 'abs' ? 'Rechecking…' : 'Recheck'}
+                </button>
+              </div>
+            </section>
           )}
 
           <div className="tools">

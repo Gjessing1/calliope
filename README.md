@@ -33,8 +33,13 @@ lookup. BookPrep edits one uploaded book and hands it back. Calliope edits the l
 - **Metadata lookup** — ISBN and title search across Google Books, Open Library and Apple Books,
   always reviewed before it is applied.
 - **Cover search, upload and history**, with automatic resizing and transparency flattening.
-- **Audiobookshelf integration** — shows where your reader's view and the file itself disagree, and
-  asks ABS to rescan after a save.
+- **Batch edits** — select books (Ctrl/Shift-click, or Select) and set a series numbered by
+  publication date, rename an author everywhere, set a language or publisher, add or remove
+  subjects, or tidy descriptions, dates and codes. Every book's change is previewed and can be left
+  out; each write is an ordinary save with its own history entry and conflict check.
+- **Audiobookshelf integration** — shows each field where your reader's view and the file disagree,
+  with both values, and lets you take ABS's value into the file per book or across a selection, or
+  open the book in ABS to fix it there. Asks ABS to rescan after a save.
 - **Web and Android** from one codebase.
 
 ## Requirements
@@ -55,19 +60,20 @@ including the Audiobookshelf wiring.
 
 ### Configuration
 
-| Variable                  | Default  | What it does                                                   |
-| ------------------------- | -------- | -------------------------------------------------------------- |
-| `PORT`                    | `3008`   | HTTP port                                                      |
-| `CALLIOPE_LIBRARY_ROOT`   | `/books` | The ebook library. Mounted read-write.                         |
-| `CALLIOPE_DATA_DIR`       | `./data` | Index, cover cache and revisions. Keep it outside the library. |
-| `CALLIOPE_REVISION_LIMIT` | `10`     | Full pre-write EPUB snapshots retained per book                |
-| `CALLIOPE_BACKUP_ON_SAVE` | `false`  | Keep a `.bak` beside each edited book                          |
-| `CALLIOPE_SCAN_ON_START`  | `true`   | Walk the library at startup                                    |
-| `ABS_URL`                 | —        | Audiobookshelf origin. Optional.                               |
-| `ABS_TOKEN`               | —        | Audiobookshelf API token. Required with `ABS_URL`.             |
-| `ABS_BOOKS_ROOT`          | `/books` | Where the library is mounted inside the ABS container          |
-| `ABS_LIBRARY_ID`          | —        | Restrict to one ABS library                                    |
-| `ABS_RESCAN_ON_SAVE`      | `true`   | Ask ABS to rescan after a write                                |
+| Variable                  | Default  | What it does                                                                                                   |
+| ------------------------- | -------- | -------------------------------------------------------------------------------------------------------------- |
+| `PORT`                    | `3008`   | HTTP port                                                                                                      |
+| `CALLIOPE_LIBRARY_ROOT`   | `/books` | The ebook library. Mounted read-write.                                                                         |
+| `CALLIOPE_DATA_DIR`       | `./data` | Index, cover cache and revisions. Keep it outside the library.                                                 |
+| `CALLIOPE_REVISION_LIMIT` | `10`     | Full pre-write EPUB snapshots retained per book                                                                |
+| `CALLIOPE_BACKUP_ON_SAVE` | `false`  | Keep a `.bak` beside each edited book                                                                          |
+| `CALLIOPE_SCAN_ON_START`  | `true`   | Walk the library at startup                                                                                    |
+| `ABS_URL`                 | —        | Audiobookshelf origin. Optional.                                                                               |
+| `ABS_TOKEN`               | —        | Audiobookshelf API token. Required with `ABS_URL`.                                                             |
+| `ABS_BOOKS_ROOT`          | `/books` | Where the library is mounted inside the ABS container                                                          |
+| `ABS_LIBRARY_ID`          | —        | Restrict to one ABS library                                                                                    |
+| `ABS_RESCAN_ON_SAVE`      | `true`   | Ask ABS to rescan after a write                                                                                |
+| `ABS_PUBLIC_URL`          | —        | ABS as a browser reaches it, e.g. `https://abs.example/audiobookshelf`; enables "Open in Audiobookshelf" links |
 
 ## Development
 

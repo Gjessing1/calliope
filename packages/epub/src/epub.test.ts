@@ -397,6 +397,23 @@ describe('writeEpub — what an edit must not break (EPUB 3)', () => {
     expect(await danglingRefinements(cleared)).toEqual([]);
   });
 
+  it.each(['2.0', '3.0'] as const)(
+    'renames a series without renumbering it, and renumbers without the name (EPUB %s)',
+    async (version) => {
+      const book = await edit(await makeEpub(version, BASE_META), {
+        series: 'Old',
+        seriesIndex: '4',
+      });
+      const renamed = extractMetadata((await readEpub(await edit(book, { series: 'New' }))).meta);
+      expect([renamed.series, renamed.seriesIndex]).toEqual(['New', '4']);
+
+      const renumbered = extractMetadata(
+        (await readEpub(await edit(book, { seriesIndex: '7' }))).meta,
+      );
+      expect([renumbered.series, renumbered.seriesIndex]).toEqual(['Old', '7']);
+    },
+  );
+
   it("keeps Calibre's legacy series meta in step, so a cleared series stays cleared", async () => {
     const book = await makeEpub(
       '3.0',

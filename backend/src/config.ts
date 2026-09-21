@@ -25,6 +25,12 @@ export interface Config {
     token: string;
     booksRoot: string;
     libraryId?: string;
+    /**
+     * ABS as a *browser* reaches it, base path included (ABS serves its UI
+     * under `/audiobookshelf` by default) — for "open in Audiobookshelf" links.
+     * `url` is the container-network address and useless to a browser.
+     */
+    publicUrl?: string;
     /** Ask ABS to rescan after a write. Requires a token with admin rights. */
     rescanOnSave: boolean;
   } | null;
@@ -60,6 +66,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
             token: absToken,
             booksRoot: env.ABS_BOOKS_ROOT ?? '/books',
             libraryId: env.ABS_LIBRARY_ID?.trim() || undefined,
+            publicUrl: env.ABS_PUBLIC_URL?.trim().replace(/\/+$/, '') || undefined,
             rescanOnSave: bool(env.ABS_RESCAN_ON_SAVE, true),
           }
         : null,

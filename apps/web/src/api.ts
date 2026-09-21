@@ -1,4 +1,8 @@
 import type {
+  BatchJob,
+  BatchOperation,
+  BatchPlan,
+  BatchPlanItem,
   BookRevision,
   BookMetadata,
   CoverCandidate,
@@ -28,9 +32,12 @@ export class ApiError extends Error {
 }
 
 async function request<T>(pathname: string, init?: RequestInit): Promise<T> {
+  // Only a request with a body is JSON. Fastify rejects a bodiless POST that
+  // claims to be JSON with a 400 — which is how the Rescan button once failed
+  // silently on every click.
   const res = await fetch(`${API_ORIGIN}${pathname}`, {
     ...init,
-    headers: { 'Content-Type': 'application/json', ...init?.headers },
+    headers: init?.body ? { 'Content-Type': 'application/json', ...init.headers } : init?.headers,
   });
   if (!res.ok) {
     const body = (await res.json().catch(() => ({}))) as { error?: string };
@@ -66,7 +73,13 @@ export interface Status {
     scanning: boolean;
     lastScan: ScanSummary | null;
   };
-  audiobookshelf: { configured: boolean; url?: string; error?: string | null };
+  audiobookshelf: {
+    configured: boolean;
+    url?: string;
+    /** ABS as a browser reaches it, for "open in Audiobookshelf" links; null when unset. */
+    publicUrl?: string | null;
+    error?: string | null;
+  };
   backupOnSave: boolean;
   revisionLimit: number;
 }
@@ -74,15 +87,26 @@ export interface Status {
 export const api = {
   status: () => request<Status>('/api/status'),
 
-  library: (params: { search?: string; sort?: string; limit?: number; offset?: number } = {}) => {
+  library: (
+    params: {
+      search?: string;
+      sort?: string;
+      /** Only books whose file and Audiobookshelf disagree. */
+      drift?: boolean;
+      limit?: number;
+      offset?: number;
+    } = {},
+  ) => {
     const query = new URLSearchParams();
     for (const [key, value] of Object.entries(params)) {
-      if (value !== undefined && value !== '') query.set(key, String(value));
+      if (value !== undefined && value !== '' && value !== false) query.set(key, String(value));
     }
     return request<LibraryPage>(`/api/library?${query}`);
   },
 
   book: (id: string) => request<MergedBook>(`/api/books/${id}`),
+
+  refreshAbs: () => request<{ refreshed: true }>('/api/abs/refresh', { method: 'POST' }),
 
   scan: (force = false) =>
     request<{ started: boolean }>(`/api/library/scan?force=${force}`, { method: 'POST' }),
@@ -119,6 +143,30 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ metadata }),
     }),
+
+  batchPreview: (ids: string[], operation: BatchOperation) =>
+    request<BatchPlan>('/api/batch/preview', {
+      method: 'POST',
+      body: JSON.stringify({ ids, operation }),
+    }),
+
+  // Sends back exactly what was reviewed, with the file state each book was
+  // reviewed at: the server writes nothing else, and refuses a book that moved.
+  batchApply: (label: string, items: BatchPlanItem[]) =>
+    request<BatchJob>('/api/batch/apply', {
+      method: 'POST',
+      body: JSON.stringify({
+        label,
+        items: items.map(({ id, update, expectedMtimeMs, expectedFileSize }) => ({
+          id,
+          update,
+          expectedMtimeMs,
+          expectedFileSize,
+        })),
+      }),
+    }),
+
+  batch: () => request<{ job: BatchJob | null }>('/api/batch'),
 
   lookupIsbn: (isbn: string) =>
     request<LookupResult>(`/api/lookup/isbn?isbn=${encodeURIComponent(isbn)}`),

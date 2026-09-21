@@ -9,7 +9,7 @@ import { bookId, readEpubFile, saveEpubFile } from '@calliope/epub';
 import { AbsClient } from './abs.js';
 import { CoverCache } from './covers.js';
 import { LibraryIndex, ftsQuery } from './index-db.js';
-import { absDrift } from './merge.js';
+import { absDifferences, absDrift } from './merge.js';
 import { RevisionStore } from './revisions.js';
 import { findEpubs, scanLibrary } from './scan.js';
 
@@ -385,6 +385,63 @@ describe('absDrift', () => {
 
   it('catches an extra author on one side', () => {
     expect(absDrift(book, { ...abs, authors: ['Franz Kafka', 'Willa Muir'] })).toEqual(['authors']);
+  });
+
+  it('carries both values and the edit that would make the file agree', () => {
+    const [difference] = absDifferences(book, { ...abs, title: 'Der Process' });
+    expect(difference).toEqual({
+      field: 'title',
+      label: 'Title',
+      file: 'The Trial',
+      abs: 'Der Process',
+      adopt: { title: 'Der Process', subtitle: '' },
+    });
+  });
+
+  it("keeps each author's role when adopting ABS's spelling", () => {
+    const translated = {
+      ...book,
+      metadata: {
+        ...book.metadata,
+        authors: [
+          { name: 'Franz Kafka', role: 'aut', fileAs: 'Kafka, Franz' },
+          { name: 'W. Muir', role: 'trl', fileAs: null },
+        ],
+      },
+    };
+    const [difference] = absDifferences(translated, {
+      ...abs,
+      authors: ['Franz Kafka', 'Willa Muir'],
+    });
+    expect(difference?.adopt).toEqual({
+      authors: [
+        { name: 'Franz Kafka', role: 'aut', fileAs: 'Kafka, Franz' },
+        { name: 'Willa Muir', role: 'trl', fileAs: null },
+      ],
+    });
+  });
+
+  it('treats a subtitle kept apart in ABS as the same title', () => {
+    const joined = { ...book, metadata: { ...book.metadata, title: 'The Trial: A Novel' } };
+    expect(absDrift(joined, { ...abs, title: 'The Trial', subtitle: 'A Novel' })).toEqual([]);
+  });
+
+  it('compares a series position as a number, and reports a different one', () => {
+    const numbered = { ...book, metadata: { ...book.metadata, series: 'K', seriesIndex: '1' } };
+    expect(absDrift(numbered, { ...abs, series: [{ name: 'K', sequence: '1.0' }] })).toEqual([]);
+    expect(absDrift(numbered, { ...abs, series: [{ name: 'K', sequence: '2' }] })).toEqual([
+      'series',
+    ]);
+  });
+
+  it('ignores ISBN hyphenation and language code length', () => {
+    const coded = { ...book, metadata: { ...book.metadata, identifier: '978-0-8052-0999-0' } };
+    expect(absDrift(coded, { ...abs, isbn: '9780805209990', language: 'eng' })).toEqual([]);
+  });
+
+  it('shows a language name from ABS but does not offer to write it', () => {
+    const [difference] = absDifferences(book, { ...abs, language: 'German' });
+    expect(difference).toMatchObject({ field: 'language', abs: 'German', adopt: null });
   });
 });
 

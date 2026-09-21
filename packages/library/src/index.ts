@@ -7,4 +7,6 @@ export { findEpubs, scanLibrary } from './scan.js';
 export type { ScanOptions } from './scan.js';
 export { AbsClient } from './abs.js';
 export type { AbsConfig } from './abs.js';
-export { absDrift, mergeAbs } from './merge.js';
+export { absDifferences, absDrift, mergeAbs } from './merge.js';
+export { planBatch } from './batch.js';
+export type { PlannedBook } from './batch.js';

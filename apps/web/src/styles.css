@@ -149,6 +149,13 @@ button.primary {
   border-color: var(--accent);
 }
 
+/* The generic hover above outranks `button.primary` and once turned every
+   primary button pale with white text under the pointer. */
+button.primary:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 86%, var(--ink));
+  border-color: color-mix(in srgb, var(--accent) 86%, var(--ink));
+}
+
 .grid {
   list-style: none;
   padding: 0;
@@ -159,6 +166,9 @@ button.primary {
 }
 
 .card {
+  /* The selection outline shows what a tap did; the WebView's blue flash on
+     top of it only hides the cover. */
+  -webkit-tap-highlight-color: transparent;
   width: 100%;
   background: none;
   border: none;
@@ -169,7 +179,9 @@ button.primary {
   gap: 4px;
 }
 
-.card:hover {
+/* As specific as the generic button hover, which otherwise paints a grey box
+   behind a card's text — and on a touch screen leaves it there after a tap. */
+button.card:hover:not(:disabled) {
   background: none;
 }
 
@@ -939,6 +951,480 @@ button.small {
   background: var(--bg);
 }
 
+/* ---- File vs Audiobookshelf --------------------------------------------- */
+
+.panel.drift {
+  border-color: var(--warn-ink);
+  border-color: color-mix(in srgb, var(--warn-ink) 35%, var(--line));
+}
+
+.drift ul {
+  list-style: none;
+  padding: 0;
+  margin: 10px 0 0;
+  display: grid;
+  gap: 8px;
+}
+
+.drift li {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 4px 12px;
+  align-items: center;
+  padding: 8px 10px;
+  border-radius: var(--radius);
+  background: var(--surface);
+  border: 1px solid var(--line);
+}
+
+.drift li.taken {
+  background: var(--changed-bg);
+}
+
+.drift-field {
+  grid-column: 1 / -1;
+  color: var(--ink-soft);
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.drift-values {
+  margin: 0;
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 2px 10px;
+}
+
+.drift-values > div {
+  display: contents;
+}
+
+.drift-values dt {
+  color: var(--ink-soft);
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-size: 0.8rem;
+  padding-top: 2px;
+}
+
+.drift-values dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.drift-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+.drift-foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+a.button {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: inherit;
+  text-decoration: none;
+  font-family: ui-sans-serif, system-ui, sans-serif;
+}
+
+a.button:hover {
+  background: var(--surface-2);
+}
+
+a.button.small {
+  padding: 5px 10px;
+  font-size: 0.8rem;
+}
+
+button.filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+button.filter.on {
+  border-color: var(--accent);
+  background: var(--changed-bg);
+}
+
+.filter-count {
+  min-width: 20px;
+  padding: 0 6px;
+  border-radius: 10px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-size: 0.72rem;
+  line-height: 20px;
+  text-align: center;
+}
+
+/* ---- Selection mode ------------------------------------------------------ */
+
+.check {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 2px solid #fff;
+  background: rgb(0 0 0 / 0.28);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.35);
+}
+
+.card.selected .check {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.card.selected .check::after {
+  content: '';
+  position: absolute;
+  left: 7px;
+  top: 3px;
+  width: 6px;
+  height: 11px;
+  border: solid var(--accent-ink);
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+
+.card.selected .cover {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.grid.selecting .card:not(.selected) .cover img {
+  opacity: 0.82;
+}
+
+/* Floats over the bottom of the grid; the grid gets room so the last row can
+   scroll clear of it. */
+.grid.selecting {
+  padding-bottom: 96px;
+}
+
+.selection-bar {
+  position: fixed;
+  left: 50%;
+  bottom: calc(16px + env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  z-index: 5;
+  width: min(760px, calc(100% - 32px));
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 10px 12px 10px 16px;
+  border: 1px solid var(--line);
+  border-radius: calc(var(--radius) + 4px);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-size: 0.9rem;
+}
+
+.selection-count {
+  flex: 1 1 auto;
+  font-weight: 600;
+}
+
+.selection-count .hint {
+  font-weight: 400;
+}
+
+.batch-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.batch-banner span {
+  flex: 1;
+}
+
+/* ---- Batch sheet --------------------------------------------------------- */
+
+.op-picker {
+  border: none;
+  padding: 0;
+  margin: 16px 0 8px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 8px;
+}
+
+.op-picker legend,
+.choices legend {
+  padding: 0;
+  margin-bottom: 8px;
+  color: var(--ink-soft);
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.op {
+  position: relative;
+  display: grid;
+  gap: 2px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  cursor: pointer;
+}
+
+.op:hover {
+  background: var(--surface-2);
+}
+
+.op input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.op:has(input:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.op.chosen {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+  background: var(--changed-bg);
+}
+
+.op strong {
+  font-size: 0.95rem;
+}
+
+.op span {
+  color: var(--ink-soft);
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
+.op-fields {
+  margin-top: 12px;
+}
+
+.op-fields .field .hint {
+  display: block;
+  margin-top: 4px;
+}
+
+.choices {
+  border: none;
+  padding: 0;
+  margin: 4px 0 0;
+  display: grid;
+  gap: 6px;
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-size: 0.9rem;
+}
+
+.choices label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.choices input[type='radio'],
+.choices input[type='checkbox'],
+.batch-include input {
+  width: auto;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.inline-number {
+  width: 5.5em;
+  padding: 4px 8px;
+}
+
+.subject-list {
+  max-height: 280px;
+  overflow-y: auto;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.subject-list label {
+  flex-wrap: nowrap;
+}
+
+.subject-list label span:first-of-type {
+  flex: 1;
+}
+
+.count {
+  color: var(--ink-soft);
+  font-size: 0.78rem;
+}
+
+.chips {
+  list-style: none;
+  padding: 0;
+  margin: 8px 0 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.chips li {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 4px 2px 10px;
+  border-radius: 999px;
+  background: var(--added-bg);
+  color: var(--added-ink);
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-size: 0.85rem;
+}
+
+.chips button.icon {
+  padding: 0 6px;
+  color: inherit;
+}
+
+.banner.suggestion {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.banner.suggestion span {
+  flex: 1;
+}
+
+.review-lead {
+  margin: 16px 0 8px;
+}
+
+.batch-items {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 12px;
+}
+
+.batch-items > li {
+  padding: 10px 12px 2px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+}
+
+.batch-items > li.left-out {
+  opacity: 0.5;
+}
+
+.batch-items .change-list {
+  margin: 8px 0;
+}
+
+.batch-include {
+  display: flex;
+  align-items: start;
+  gap: 10px;
+  cursor: pointer;
+}
+
+.batch-include input {
+  margin-top: 5px;
+}
+
+.batch-include > span {
+  display: grid;
+}
+
+.unchanged {
+  margin-top: 16px;
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-size: 0.85rem;
+  color: var(--ink-soft);
+}
+
+.unchanged summary {
+  cursor: pointer;
+}
+
+.progress {
+  height: 8px;
+  margin: 20px 0 8px;
+  border-radius: 4px;
+  background: var(--surface-2);
+  overflow: hidden;
+}
+
+.progress span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.3s ease;
+}
+
+.batch-results {
+  list-style: none;
+  padding: 0;
+  margin: 12px 0 0;
+  display: grid;
+  gap: 6px;
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-size: 0.88rem;
+}
+
+.batch-results li {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 2px 12px;
+  padding: 8px 10px;
+  border-radius: var(--radius);
+  background: var(--surface);
+  border: 1px solid var(--line);
+}
+
+.batch-results li .hint {
+  grid-column: 1 / -1;
+}
+
+.result-saved > span:nth-child(2) {
+  color: var(--added-ink);
+}
+
+.result-conflict,
+.result-missing {
+  background: var(--warn-bg) !important;
+  color: var(--warn-ink);
+}
+
+.result-failed {
+  background: var(--error-bg) !important;
+  color: var(--error-ink);
+}
+
 @media (max-width: 620px) {
   .author-row {
     grid-template-columns: 1fr 100px;
@@ -981,6 +1467,60 @@ button.small {
   .change-list dd b {
     transform: rotate(90deg);
     width: min-content;
+  }
+
+  .selection-bar {
+    bottom: calc(8px + env(safe-area-inset-bottom));
+    width: calc(100% - 16px);
+  }
+
+  .selection-count {
+    flex-basis: 100%;
+  }
+
+  .selection-bar button {
+    white-space: nowrap;
+  }
+
+  .selection-bar button.primary {
+    flex: 1;
+  }
+
+  .op-picker {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .toolbar {
+    gap: 6px;
+  }
+
+  .toolbar .search {
+    flex-basis: 100%;
+  }
+
+  /* The sort select gives up width so the buttons share its row. */
+  .toolbar select {
+    flex: 1 1 80px;
+    min-width: 0;
+  }
+
+  .toolbar select,
+  .toolbar button,
+  .selection-bar button {
+    font-size: 0.88rem;
+    padding: 7px 10px;
+  }
+
+  .filter .full {
+    display: none;
+  }
+
+  .drift li {
+    grid-template-columns: 1fr;
+  }
+
+  .drift-actions {
+    justify-content: flex-start;
   }
 }
 

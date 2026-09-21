@@ -177,6 +177,7 @@ function toAbsBook(item: AbsLibraryItem): AbsBook {
     libraryId: item.libraryId,
     path: item.path ?? '',
     title: meta.title ?? '',
+    subtitle: meta.subtitle || null,
     authors: (meta.authors ?? []).map((a) => a.name ?? '').filter(Boolean),
     series: (meta.series ?? []).map((s) => ({ name: s.name ?? '', sequence: s.sequence ?? null })),
     narrators: meta.narrators ?? [],

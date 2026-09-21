@@ -1,24 +1,17 @@
-import { stat } from 'node:fs/promises';
-import path from 'node:path';
-import type { FastifyInstance, FastifyReply } from 'fastify';
+import type { FastifyInstance } from 'fastify';
 import type { BookMetadata, MetadataUpdate } from '@calliope/core';
 import type { LibrarySort } from '@calliope/library';
-import {
-  getCoverBuffer,
-  normalizeMetadata,
-  optimizeCover,
-  readEpub,
-  readEpubFile,
-  saveEpubFile,
-} from '@calliope/epub';
+import { getCoverBuffer, normalizeMetadata, optimizeCover, readEpub } from '@calliope/epub';
 import { fetchCoverImage } from '@calliope/metadata';
 import type { AppState } from '../state.js';
-import { resolveBookPath } from '../paths.js';
+import { commitWrite, requestAbsRescan } from '../writes.js';
 import { isAllowedCoverUrl } from './lookup.js';
 
 interface ListQuery {
   search?: string;
   sort?: LibrarySort;
+  /** `true`: only books whose file and Audiobookshelf disagree. */
+  drift?: string;
   limit?: string;
   offset?: string;
 }
@@ -41,52 +34,28 @@ function uploadedCover(value: string): Buffer | null {
   return cover.length > 0 && cover.length <= 15 * 1024 * 1024 ? cover : null;
 }
 
-async function refreshAfterWrite(
-  state: AppState,
-  bookId: string,
-  absolute: string,
-  bytes: number,
-): Promise<void> {
-  const book = state.index.get(bookId)!;
-  const [{ metadata, version, cover }, file] = await Promise.all([
-    readEpubFile(absolute),
-    stat(absolute),
-  ]);
-  const hasCover = cover ? await state.covers.put(book.id, cover) : false;
-  if (!cover) await state.covers.remove(book.id);
-
-  state.index.upsert({
-    ...book,
-    metadata,
-    epubVersion: version,
-    fileSize: bytes,
-    mtimeMs: file.mtimeMs,
-    hasCover,
-    scannedAt: Date.now(),
-  });
-}
-
-async function requestAbsRescan(state: AppState): Promise<'ok' | 'failed' | 'skipped'> {
-  if (!state.abs || !state.config.abs?.rescanOnSave) return 'skipped';
-  try {
-    await state.abs.rescanAll();
-    return 'ok';
-  } catch {
-    return 'failed';
-  }
-}
-
-function conflict(reply: FastifyReply): FastifyReply {
-  return reply.code(409).send({
-    error:
-      'This book changed after the editor was opened. Close it, review the latest file, and try again.',
-  });
-}
-
 export function libraryRoutes(app: FastifyInstance, state: AppState): void {
   app.get<{ Querystring: ListQuery }>('/api/library', async (req) => {
     const limit = Math.min(Number(req.query.limit ?? 200), 1000);
     const offset = Number(req.query.offset ?? 0);
+
+    // Disagreement with ABS is computed per book at merge time, not stored, so
+    // this filter walks the matching books. A personal library is small enough
+    // for that to cost milliseconds.
+    if (req.query.drift === 'true') {
+      const differing = state.index
+        .list({ search: req.query.search, sort: req.query.sort ?? 'title', limit: 100_000 })
+        .map((book) => state.merge(book))
+        .filter((book) => book.absDrift.length > 0);
+      return {
+        total: differing.length,
+        limit,
+        offset,
+        scanning: state.isScanning,
+        books: differing.slice(offset, offset + limit),
+      };
+    }
+
     const books = state.index.list({
       search: req.query.search,
       sort: req.query.sort ?? 'title',
@@ -195,106 +164,39 @@ export function libraryRoutes(app: FastifyInstance, state: AppState): void {
         cover = await optimizeCover(previousCover);
       }
 
-      return state.writeBook(req.params.id, async () => {
-        const book = state.index.get(req.params.id);
-        if (!book) return reply.code(404).send({ error: 'No such book' });
-        if (
-          (req.body.expectedMtimeMs !== undefined && req.body.expectedMtimeMs !== book.mtimeMs) ||
-          (req.body.expectedFileSize !== undefined && req.body.expectedFileSize !== book.fileSize)
-        ) {
-          return conflict(reply);
-        }
-
-        const absolute = resolveBookPath(state.config.libraryRoot, book.path);
-        if (!absolute) return reply.code(400).send({ error: 'Book path is outside the library' });
-        const file = await stat(absolute);
-        if (
-          (req.body.expectedMtimeMs !== undefined &&
-            Math.abs(file.mtimeMs - req.body.expectedMtimeMs) > 1) ||
-          (req.body.expectedFileSize !== undefined && file.size !== req.body.expectedFileSize)
-        ) {
-          return conflict(reply);
-        }
-
-        const revision = await state.revisions.capture(book.id, absolute, {
-          metadata: book.metadata,
-          hasCover: book.hasCover,
-          thumbnail: await state.covers.get(book.id),
-        });
-        const result = await saveEpubFile(absolute, req.body.metadata, {
-          backup: state.config.backupOnSave,
-          cover,
-        });
-        await refreshAfterWrite(state, book.id, absolute, result.bytes);
-        const absRescan = await requestAbsRescan(state);
-
-        return {
-          saved: true,
-          warnings: result.warnings,
-          backupPath: result.backupPath ? path.basename(result.backupPath) : null,
-          revision,
-          bytes: result.bytes,
-          absRescan,
-          book: state.merge(state.index.get(book.id)!),
-        };
+      const outcome = await commitWrite(state, req.params.id, req.body, {
+        metadata: req.body.metadata,
+        cover,
       });
+      if (!outcome.ok) return reply.code(outcome.code).send({ error: outcome.error });
+      const { ok: _ok, book, ...result } = outcome;
+      return {
+        saved: true,
+        ...result,
+        absRescan: await requestAbsRescan(state),
+        book: state.merge(book),
+      };
     },
   );
 
   app.post<{
     Params: { id: string; revisionId: string };
     Body: { expectedMtimeMs?: number; expectedFileSize?: number };
-  }>('/api/books/:id/revisions/:revisionId/restore', async (req, reply) =>
-    state.writeBook(req.params.id, async () => {
-      const book = state.index.get(req.params.id);
-      if (!book) return reply.code(404).send({ error: 'No such book' });
-      if (
-        (req.body?.expectedMtimeMs !== undefined && req.body.expectedMtimeMs !== book.mtimeMs) ||
-        (req.body?.expectedFileSize !== undefined && req.body.expectedFileSize !== book.fileSize)
-      ) {
-        return conflict(reply);
-      }
-      const absolute = resolveBookPath(state.config.libraryRoot, book.path);
-      if (!absolute) return reply.code(400).send({ error: 'Book path is outside the library' });
-      const file = await stat(absolute);
-      if (
-        (req.body?.expectedMtimeMs !== undefined &&
-          Math.abs(file.mtimeMs - req.body.expectedMtimeMs) > 1) ||
-        (req.body?.expectedFileSize !== undefined && file.size !== req.body.expectedFileSize)
-      ) {
-        return conflict(reply);
-      }
+  }>('/api/books/:id/revisions/:revisionId/restore', async (req, reply) => {
+    if (!state.index.get(req.params.id)) return reply.code(404).send({ error: 'No such book' });
+    const replacement = await state.revisions.read(req.params.id, req.params.revisionId);
+    if (!replacement) return reply.code(404).send({ error: 'No such revision' });
 
-      const replacement = await state.revisions.read(book.id, req.params.revisionId);
-      if (!replacement) return reply.code(404).send({ error: 'No such revision' });
-
-      // Capture the present file first, making restoration itself undoable.
-      const revision = await state.revisions.capture(book.id, absolute, {
-        metadata: book.metadata,
-        hasCover: book.hasCover,
-        thumbnail: await state.covers.get(book.id),
-      });
-      const result = await saveEpubFile(
-        absolute,
-        {},
-        {
-          backup: state.config.backupOnSave,
-          replacement,
-        },
-      );
-      await refreshAfterWrite(state, book.id, absolute, result.bytes);
-      const absRescan = await requestAbsRescan(state);
-
-      return {
-        saved: true,
-        restored: true,
-        warnings: result.warnings,
-        backupPath: result.backupPath ? path.basename(result.backupPath) : null,
-        revision,
-        bytes: result.bytes,
-        absRescan,
-        book: state.merge(state.index.get(book.id)!),
-      };
-    }),
-  );
+    // commitWrite captures the present file first, making the restore itself undoable.
+    const outcome = await commitWrite(state, req.params.id, req.body ?? {}, { replacement });
+    if (!outcome.ok) return reply.code(outcome.code).send({ error: outcome.error });
+    const { ok: _ok, book, ...result } = outcome;
+    return {
+      saved: true,
+      restored: true,
+      ...result,
+      absRescan: await requestAbsRescan(state),
+      book: state.merge(book),
+    };
+  });
 }

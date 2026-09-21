@@ -1,4 +1,4 @@
-import type { BookMetadata } from './metadata.js';
+import type { BookMetadata, MetadataUpdate } from './metadata.js';
 
 /**
  * One EPUB in the library, as the index knows it.
@@ -40,6 +40,8 @@ export interface AbsBook {
   /** Path as ABS sees it, inside its own mount (`/books/...`). */
   path: string;
   title: string;
+  /** Null in records cached before subtitles were read; treat as none. */
+  subtitle?: string | null;
   authors: string[];
   series: Array<{ name: string; sequence: string | null }>;
   narrators: string[];
@@ -65,6 +67,24 @@ export interface MergedBook extends LibraryBook {
   abs: AbsBook | null;
   /** Fields where the EPUB and ABS disagree, e.g. `['title', 'series']`. */
   absDrift: string[];
+  /** The same disagreements with both sides' values, so a person can choose between them. */
+  absDifferences: AbsDifference[];
+}
+
+/** One field where the file and Audiobookshelf disagree. */
+export interface AbsDifference {
+  field: 'title' | 'authors' | 'series' | 'publisher' | 'date' | 'identifier' | 'language';
+  label: string;
+  /** What the EPUB says, as display text. */
+  file: string;
+  /** What Audiobookshelf shows, as display text. */
+  abs: string;
+  /**
+   * The edit that would make the file say what Audiobookshelf shows. Null when
+   * ABS's value cannot be written into an EPUB as it is — a language *name*
+   * where the file needs a code.
+   */
+  adopt: MetadataUpdate | null;
 }
 
 export interface ScanSummary {

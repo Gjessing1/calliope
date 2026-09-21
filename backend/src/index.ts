@@ -5,6 +5,7 @@ import cors from '@fastify/cors';
 import fastifyStatic from '@fastify/static';
 import Fastify from 'fastify';
 import { loadConfig } from './config.js';
+import { batchRoutes } from './routes/batch.js';
 import { libraryRoutes } from './routes/library.js';
 import { lookupRoutes } from './routes/lookup.js';
 import { statusRoutes } from './routes/status.js';
@@ -29,6 +30,7 @@ await app.register(cors, { origin: true });
 
 statusRoutes(app, state);
 libraryRoutes(app, state);
+batchRoutes(app, state);
 lookupRoutes(app);
 
 // In production the built web app is copied to backend/public by the Dockerfile
