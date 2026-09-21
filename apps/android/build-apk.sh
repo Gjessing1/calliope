@@ -41,6 +41,10 @@ if [[ ! -d android ]]; then
 fi
 echo "==> syncing Capacitor plugins and web assets"
 npx cap sync android
+# The native project is generated and gitignored, so the launcher icon is
+# rewritten into it on every build rather than kept there.
+echo "==> writing the launcher icon"
+node ../../scripts/app-icon.mjs --android android/app/src/main/res
 
 GRADLE_FILE=android/app/build.gradle
 sed -i -E "s/versionCode [0-9]+/versionCode $VERSION_CODE/" "$GRADLE_FILE"
