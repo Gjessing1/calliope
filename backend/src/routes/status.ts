@@ -28,6 +28,7 @@ export function statusRoutes(app: FastifyInstance, state: AppState): void {
       root: state.config.libraryRoot,
       books: state.index.count(),
       scanning: state.isScanning,
+      scanProgress: state.scanProgress,
       lastScan: state.lastScan,
     },
     audiobookshelf: state.abs

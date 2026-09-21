@@ -9,6 +9,7 @@ import type {
   LookupResult,
   MergedBook,
   MetadataUpdate,
+  ScanProgress,
   ScanSummary,
 } from '@calliope/core';
 
@@ -71,6 +72,7 @@ export interface Status {
     root: string;
     books: number;
     scanning: boolean;
+    scanProgress: ScanProgress | null;
     lastScan: ScanSummary | null;
   };
   audiobookshelf: {

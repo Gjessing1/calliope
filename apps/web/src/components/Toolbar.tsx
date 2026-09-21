@@ -4,6 +4,7 @@ interface ToolbarProps {
   search: string;
   view: LibraryView;
   scanning: boolean;
+  scanLabel: string;
   selecting: boolean;
   onSelecting: (on: boolean) => void;
   /** Books whose file and Audiobookshelf disagree; 0 hides the filter. */
@@ -19,6 +20,7 @@ export function Toolbar({
   search,
   view,
   scanning,
+  scanLabel,
   selecting,
   onSelecting,
   driftCount,
@@ -72,7 +74,7 @@ export function Toolbar({
         {selecting ? 'Cancel' : 'Select'}
       </button>
       <button type="button" onClick={() => void onScan()} disabled={scanning}>
-        {scanning ? 'Scanning…' : 'Rescan'}
+        {scanning ? scanLabel : 'Rescan'}
       </button>
     </div>
   );

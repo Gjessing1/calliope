@@ -8,6 +8,7 @@ import { BatchEditor } from './components/BatchEditor.js';
 import { BookEditor } from './components/BookEditor.js';
 import { Toolbar } from './components/Toolbar.js';
 import type { LibraryView } from './library-view.js';
+import { scanLabel } from './scan-label.js';
 
 export function App(): JSX.Element {
   const [books, setBooks] = useState<MergedBook[]>([]);
@@ -159,11 +160,16 @@ export function App(): JSX.Element {
 
   const shownSelected = books.filter((book) => selection.has(book.id)).length;
   const hiddenSelected = selection.size - shownSelected;
+  const currentScanLabel = scanLabel(status?.library.scanProgress);
 
   const onScan = async (): Promise<void> => {
     try {
       await api.scan();
-      setStatus(await api.status());
+      const nextStatus = await api.status();
+      setStatus(nextStatus);
+      // An empty or fully incremental scan can finish before this status read,
+      // so there may never be a polling tick to refresh the visible library.
+      if (!nextStatus.library.scanning) await reload();
     } catch (err) {
       setError(`Could not start a scan: ${(err as Error).message}`);
     }
@@ -183,7 +189,7 @@ export function App(): JSX.Element {
           Calliope
           <span className="masthead-sub">
             {total} {total === 1 ? 'book' : 'books'}
-            {status?.library.scanning ? ' · scanning…' : ''}
+            {status?.library.scanning ? ` · ${currentScanLabel.toLowerCase()}` : ''}
           </span>
         </h1>
       </header>
@@ -195,6 +201,7 @@ export function App(): JSX.Element {
         onView={setView}
         onScan={onScan}
         scanning={Boolean(status?.library.scanning)}
+        scanLabel={currentScanLabel}
         selecting={selecting}
         onSelecting={(on) => (on ? setSelecting(true) : stopSelecting())}
         driftCount={status?.audiobookshelf.configured ? driftCount : 0}

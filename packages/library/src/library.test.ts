@@ -136,6 +136,26 @@ describe('scanLibrary', () => {
     index.close();
   });
 
+  it('reports discovery and numbered scan progress', async () => {
+    const books = path.join(root, 'books');
+    const index = new LibraryIndex(':memory:');
+    const covers = new CoverCache(path.join(root, 'covers'));
+    await writeEpubAt('First/first.epub', 'First', 'One');
+    await writeEpubAt('Second/second.epub', 'Second', 'Two');
+    const progress = vi.fn();
+
+    await scanLibrary(books, index, covers, { onProgress: progress });
+
+    expect(progress.mock.calls.map(([value]) => value)).toEqual([
+      { phase: 'discovering', found: 1 },
+      { phase: 'discovering', found: 2 },
+      { phase: 'scanning', current: 0, total: 2 },
+      { phase: 'scanning', current: 1, total: 2 },
+      { phase: 'scanning', current: 2, total: 2 },
+    ]);
+    index.close();
+  });
+
   // Every save replaces the file by rename, so the file's own birth time would
   // reset on each edit; the folder is what records when the book arrived.
   it('dates a book by its folder, and backfills rows indexed before that existed', async () => {

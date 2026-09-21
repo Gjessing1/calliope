@@ -103,6 +103,20 @@ export interface ScanSummary {
   errors: Array<{ path: string; message: string }>;
 }
 
+/** Live progress for a scan that has not produced its final summary yet. */
+export type ScanProgress =
+  | {
+      /** The filesystem walk is still discovering how many EPUBs exist. */
+      phase: 'discovering';
+      found: number;
+    }
+  | {
+      /** The scanner is inspecting the numbered file, whether it needs parsing or not. */
+      phase: 'scanning';
+      current: number;
+      total: number;
+    };
+
 /** A recoverable pre-write snapshot kept in Calliope's data directory. */
 export interface BookRevision {
   id: string;

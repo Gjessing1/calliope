@@ -1,5 +1,5 @@
 import { mkdir } from 'node:fs/promises';
-import type { MergedBook, ScanSummary } from '@calliope/core';
+import type { MergedBook, ScanProgress, ScanSummary } from '@calliope/core';
 import {
   AbsClient,
   CoverCache,
@@ -26,6 +26,7 @@ export class AppState {
   readonly abs: AbsClient | null;
 
   private scanning: Promise<ScanSummary> | null = null;
+  scanProgress: ScanProgress | null = null;
   private readonly bookWrites = new Map<string, Promise<void>>();
   lastScan: ScanSummary | null = null;
   absError: string | null = null;
@@ -49,7 +50,13 @@ export class AppState {
   async scan(force = false): Promise<ScanSummary> {
     if (this.scanning) return this.scanning;
 
-    this.scanning = scanLibrary(this.config.libraryRoot, this.index, this.covers, { force })
+    this.scanProgress = { phase: 'discovering', found: 0 };
+    this.scanning = scanLibrary(this.config.libraryRoot, this.index, this.covers, {
+      force,
+      onProgress: (progress) => {
+        this.scanProgress = progress;
+      },
+    })
       .then(async (summary) => {
         this.lastScan = summary;
         await this.refreshAbs();
@@ -57,6 +64,7 @@ export class AppState {
       })
       .finally(() => {
         this.scanning = null;
+        this.scanProgress = null;
       });
 
     return this.scanning;

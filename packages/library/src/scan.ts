@@ -1,7 +1,7 @@
 import type { Stats } from 'node:fs';
 import { readdir, stat } from 'node:fs/promises';
 import path from 'node:path';
-import type { LibraryBook, ScanSummary } from '@calliope/core';
+import type { LibraryBook, ScanProgress, ScanSummary } from '@calliope/core';
 import { bookId, readEpubFile } from '@calliope/epub';
 import type { CoverCache } from './covers.js';
 import type { LibraryIndex } from './index-db.js';
@@ -58,8 +58,8 @@ async function arrivedAt(root: string, relativePath: string, file: Stats): Promi
 export interface ScanOptions {
   /** Re-parse every book even when mtime and size are unchanged. */
   force?: boolean;
-  /** Called after each file, for progress reporting. */
-  onProgress?: (seen: number, relativePath: string) => void;
+  /** Called while finding files and before each numbered file is inspected. */
+  onProgress?: (progress: ScanProgress) => void;
 }
 
 /**
@@ -94,10 +94,22 @@ export async function scanLibrary(
 
   await covers.init();
   const known = index.allPaths();
+  const epubPaths: string[] = [];
 
   for await (const relativePath of findEpubs(root)) {
-    summary.seen++;
-    options.onProgress?.(summary.seen, relativePath);
+    epubPaths.push(relativePath);
+    options.onProgress?.({ phase: 'discovering', found: epubPaths.length });
+  }
+
+  summary.seen = epubPaths.length;
+  options.onProgress?.({ phase: 'scanning', current: 0, total: epubPaths.length });
+
+  for (const [indexInScan, relativePath] of epubPaths.entries()) {
+    options.onProgress?.({
+      phase: 'scanning',
+      current: indexInScan + 1,
+      total: epubPaths.length,
+    });
 
     const absolute = path.join(root, relativePath);
     let stats;
