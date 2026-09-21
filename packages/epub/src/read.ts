@@ -2,7 +2,7 @@ import JSZip from 'jszip';
 import { parseStringPromise } from 'xml2js';
 import type { Author, BookMetadata, Contributor } from '@calliope/core';
 import { normalizeLanguageCode } from './language.js';
-import { attrsOf, textOf } from './opf.js';
+import { attrsOf, isIsbnIdentifier, refinedId, seriesCollections, textOf } from './opf.js';
 import type { OpfDocument, OpfMetadata, XmlNode } from './opf.js';
 
 /** An opened EPUB: the archive plus the parsed OPF and where it lives inside it. */
@@ -67,8 +67,15 @@ export async function readEpub(buffer: Buffer | Uint8Array | ArrayBuffer): Promi
 export function extractMetadata(meta: OpfMetadata): BookMetadata {
   const get = (k: string): string => textOf((meta[k] as XmlNode[] | undefined)?.[0]);
 
-  const getMetaProp = (prop: string): string =>
-    textOf(meta.meta?.find((m) => m.$?.property === prop));
+  // The series is the first series-type collection, and its position is the
+  // `group-position` refining *that* collection — a book can also sit in a set
+  // with a position of its own, and the first of either in document order is
+  // not necessarily the series.
+  const series = seriesCollections(meta)[0];
+  const seriesId = series?.$?.id;
+  const seriesPosition = seriesId
+    ? meta.meta?.find((m) => m.$?.property === 'group-position' && refinedId(m) === seriesId)
+    : undefined;
 
   // EPUB 2 has no `belongs-to-collection`; the de-facto standard there is
   // Calibre's `<meta name="calibre:series" content="…"/>`, which is also what
@@ -134,51 +141,26 @@ export function extractMetadata(meta: OpfMetadata): BookMetadata {
       return author;
     }) ?? [];
 
+  // A contributor's role is an opf:role attribute in EPUB 2 and a `role`
+  // refinement in EPUB 3, exactly as for authors.
   const contributors: Contributor[] =
-    meta['dc:contributor']?.map((c) => ({
-      name: textOf(c),
-      role: attrsOf(c)['opf:role'] || 'contributor',
-    })) ?? [];
+    meta['dc:contributor']?.map((c) => {
+      const { id, 'opf:role': role } = attrsOf(c);
+      const refined = id
+        ? meta.meta?.find((m) => m.$?.property === 'role' && refinedId(m) === id)
+        : undefined;
+      return { name: textOf(c), role: textOf(refined) || role || 'contributor' };
+    }) ?? [];
 
   // Identifier: an OPF commonly carries several (a UUID, an ASIN, an internal
   // id). Only the one that looks like an ISBN is surfaced for editing; the rest
   // are preserved untouched by the writer.
-  let identifier = '';
-  if (meta['dc:identifier']) {
-    const identifiers = Array.isArray(meta['dc:identifier'])
-      ? meta['dc:identifier']
-      : [meta['dc:identifier']];
-
-    for (const id of identifiers) {
-      const value = textOf(id).trim();
-      const attrs = attrsOf(id);
-      const scheme = attrs['opf:scheme'];
-      const idAttr = attrs.id;
-
-      const cleanValue = value.replace(/^urn:isbn:/i, '').replace(/[-\s]/g, '');
-
-      let isISBNRefined = false;
-      if (idAttr && meta.meta) {
-        const typeRefine = meta.meta.find(
-          (m) => m.$?.refines === `#${idAttr}` && m.$?.property === 'identifier-type',
-        );
-        if (typeRefine) {
-          const code = textOf(typeRefine);
-          if (code === '15' || code === '02' || code.toUpperCase() === 'ISBN') {
-            isISBNRefined = true;
-          }
-        }
-      }
-
-      const isISBN10 = /^\d{9}[\dX]$/i.test(cleanValue);
-      const isISBN13 = /^(978|979)\d{10}$/.test(cleanValue);
-
-      if (scheme === 'ISBN' || isISBNRefined || isISBN10 || isISBN13) {
-        identifier = value.replace(/^urn:isbn:/i, '');
-        break;
-      }
-    }
-  }
+  const isbn = meta['dc:identifier']?.find((node) => isIsbnIdentifier(node, meta));
+  const identifier = isbn
+    ? textOf(isbn)
+        .trim()
+        .replace(/^urn:isbn:/i, '')
+    : '';
 
   const rawLanguage = get('dc:language');
   const langResult = normalizeLanguageCode(rawLanguage);
@@ -197,8 +179,8 @@ export function extractMetadata(meta: OpfMetadata): BookMetadata {
     date: get('dc:date'),
     description: get('dc:description'),
     rights: get('dc:rights'),
-    series: getMetaProp('belongs-to-collection') || getCalibreMeta('calibre:series'),
-    seriesIndex: getMetaProp('group-position') || getCalibreMeta('calibre:series_index'),
+    series: textOf(series) || getCalibreMeta('calibre:series'),
+    seriesIndex: textOf(seriesPosition) || getCalibreMeta('calibre:series_index'),
     subjects: meta['dc:subject']?.map((s) => textOf(s)) ?? [],
   };
 }

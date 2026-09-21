@@ -4,7 +4,16 @@ import { Builder } from 'xml2js';
 import type { Author, MetadataUpdate } from '@calliope/core';
 import { normalizeLanguageCode } from './language.js';
 import { sanitizeMetadataString } from './sanitize.js';
-import { textOf } from './opf.js';
+import {
+  attrsOf,
+  bareIsbn,
+  collectIds,
+  isIsbn,
+  isIsbnIdentifier,
+  refinedId,
+  seriesCollections,
+  textOf,
+} from './opf.js';
 import type { ManifestItem, MetaElement, OpfDocument, XmlNode } from './opf.js';
 
 export interface WriteResult {
@@ -50,8 +59,18 @@ export async function writeEpub(
 
   const epubVersion = pkg.$?.version || '3.0';
   const isEpub2 = epubVersion.startsWith('2');
+  // Ids in the package as it was read, and the running set of ids in use —
+  // new elements must not collide with either, and a refinement whose target
+  // this write removed has to go with it.
+  const idsBefore = collectIds(pkg);
+  const taken = new Set(idsBefore);
 
-  /** Set a simple DCMES element. undefined/null = leave as-is; '' = delete. */
+  /**
+   * Set a simple DCMES element. undefined/null = leave as-is; '' = delete.
+   * A value equal to what the file already says leaves the element alone: the
+   * editor sends every field on every save, and rebuilding an unedited element
+   * would strip its attributes (`opf:event`, `xml:lang`) for nothing.
+   */
   const set = (key: string, value: string | undefined | null): void => {
     if (value === undefined || value === null) return;
     const sanitized = sanitizeMetadataString(String(value));
@@ -59,6 +78,7 @@ export async function writeEpub(
       delete meta[key];
       return;
     }
+    if (unchanged(meta[key] as XmlNode[] | undefined, sanitized)) return;
     meta[key] = [sanitized];
   };
 
@@ -72,10 +92,8 @@ export async function writeEpub(
   // EPUB 3 does allow separate dc:title elements distinguished by a title-type
   // refinement, but real readers do not implement it: they show only the first
   // title, so a subtitle stored that way is invisible everywhere it matters.
-  // Any existing title-type refinements are dropped, since nothing refers to
-  // them once the titles are merged.
-  meta.meta = meta.meta.filter((m) => m.$?.property !== 'title-type');
-
+  // The replaced titles' refinements (title-type, file-as) go in the orphan
+  // pass; an unchanged single title keeps its element, and so its sort title.
   if (updates.title) {
     const sanitizedTitle = sanitizeMetadataString(updates.title);
     let combinedTitle = sanitizedTitle;
@@ -83,7 +101,7 @@ export async function writeEpub(
       const sanitizedSubtitle = sanitizeMetadataString(updates.subtitle);
       if (sanitizedSubtitle) combinedTitle = `${sanitizedTitle}: ${sanitizedSubtitle}`;
     }
-    meta['dc:title'] = [combinedTitle];
+    if (!unchanged(meta['dc:title'], combinedTitle)) meta['dc:title'] = [combinedTitle];
   }
 
   set('dc:publisher', updates.publisher);
@@ -93,16 +111,19 @@ export async function writeEpub(
 
   if (updates.language) {
     const langResult = normalizeLanguageCode(sanitizeMetadataString(updates.language));
-    if (langResult.code) meta['dc:language'] = [langResult.code];
+    if (langResult.code && !unchanged(meta['dc:language'], langResult.code)) {
+      meta['dc:language'] = [langResult.code];
+    }
   }
 
-  writeAuthors(meta, updates, isEpub2);
+  writeAuthors(meta, updates, isEpub2, taken);
   writeContributors(meta, updates);
-  writeIdentifier(pkg, meta, updates, isEpub2, warnings);
+  writeIdentifier(pkg, meta, updates, isEpub2, taken, warnings);
   writeSubjects(meta, updates);
-  writeSeries(meta, updates, isEpub2);
+  writeSeries(meta, updates, isEpub2, taken);
 
   if (coverBuffer) replaceCover(zip, opf, opfPath, meta, coverBuffer, isEpub2);
+  pruneOrphanedRefinements(pkg, meta, idsBefore);
 
   const builder = new Builder();
   zip.file(opfPath, builder.buildObject(opf));
@@ -124,76 +145,156 @@ export async function writeEpub(
 
 type OpfMetadataNode = OpfDocument['package']['metadata'][number];
 
+/** True when the element list is exactly one element that already says `value`. */
+function unchanged(nodes: XmlNode[] | undefined, value: string): boolean {
+  return nodes?.length === 1 && textOf(nodes[0]) === value;
+}
+
+/**
+ * Remove every `<meta refines>` whose target this write removed — a dropped
+ * contributor's role, a replaced title's title-type, an old collection's
+ * position. Left behind, each is an epubcheck error ("@refines missing target
+ * id"). Repeated until stable, because a removed refinement can itself carry an
+ * id that another refinement points at.
+ *
+ * A refinement that was already dangling in the file as read is left alone,
+ * like anything else this code did not write.
+ */
+function pruneOrphanedRefinements(
+  pkg: OpfDocument['package'],
+  meta: OpfMetadataNode,
+  idsBefore: Set<string>,
+): void {
+  for (;;) {
+    const present = collectIds(pkg);
+    const all = meta.meta ?? [];
+    const kept = all.filter((m) => {
+      const target = refinedId(m);
+      return !target || present.has(target) || !idsBefore.has(target);
+    });
+    if (kept.length === all.length) return;
+    meta.meta = kept;
+  }
+}
+
+/** An id not already used anywhere in the package: `creator-0`, `creator-1`, … */
+function freshId(prefix: string, taken: Set<string>): string {
+  let n = 0;
+  while (taken.has(`${prefix}-${n}`)) n += 1;
+  const id = `${prefix}-${n}`;
+  taken.add(id);
+  return id;
+}
+
 /**
  * Authors, with a strict EPUB 2 / EPUB 3 split:
- *   EPUB 3 — `<dc:creator id="creator-N">` plus `<meta refines="#creator-N">`
- *            for role and file-as; no `opf:*` attributes.
+ *   EPUB 3 — `<dc:creator id="…">` plus `<meta refines="#…">` for role and
+ *            file-as; no `opf:*` attributes.
  *   EPUB 2 — `opf:role` / `opf:file-as` attributes on `<dc:creator>`; no
  *            `refines` elements at all.
+ *
+ * An author whose name is unchanged keeps its existing element id, so whatever
+ * else refines it (an `alternate-script` spelling, a `display-seq`, a vendor
+ * link) stays attached to the right person. Role and file-as come from the
+ * update and replace the file's — unless the author arrived as a bare name,
+ * which says nothing about either, and then the file's are kept.
+ *
+ * Only *creators'* refinements are touched. A contributor's role lives in the
+ * same `role` property, and rewriting the author list must not demote the
+ * translator.
  */
-function writeAuthors(meta: OpfMetadataNode, updates: MetadataUpdate, isEpub2: boolean): void {
+function writeAuthors(
+  meta: OpfMetadataNode,
+  updates: MetadataUpdate,
+  isEpub2: boolean,
+  taken: Set<string>,
+): void {
   const nameOf = (author: Author | string): string =>
     sanitizeMetadataString(typeof author === 'string' ? author : author.name);
 
-  if (updates.authors !== undefined && Array.isArray(updates.authors)) {
-    if (!isEpub2) {
-      // Drop every existing role/file-as refinement, whatever id it points at:
-      // the creator ids are about to be reassigned, so any surviving refinement
-      // would either be orphaned or attach to the wrong author.
-      meta.meta = (meta.meta ?? []).filter((m) => {
-        const prop = m.$?.property;
-        const refines = m.$?.refines;
-        return !((prop === 'file-as' || prop === 'role') && refines);
-      });
+  const authors =
+    updates.authors !== undefined && Array.isArray(updates.authors)
+      ? updates.authors
+      : updates.author
+        ? [updates.author]
+        : null;
+  if (!authors) return;
 
-      if (updates.authors.length === 0) {
-        delete meta['dc:creator'];
-        return;
-      }
+  const existing = meta['dc:creator'] ?? [];
+  const claimed = new Set<number>();
+  const matchOf = (name: string): XmlNode | null => {
+    const index = existing.findIndex((c, i) => !claimed.has(i) && textOf(c).trim() === name);
+    if (index < 0) return null;
+    claimed.add(index);
+    return existing[index]!;
+  };
 
-      meta['dc:creator'] = updates.authors.map((author, idx) => ({
-        _: nameOf(author),
-        $: { id: `creator-${idx}` },
-      }));
-
-      updates.authors.forEach((author, idx) => {
-        if (typeof author === 'object') {
-          if (author.fileAs) {
-            meta.meta?.push({
-              $: { refines: `#creator-${idx}`, property: 'file-as' },
-              _: sanitizeMetadataString(author.fileAs),
-            });
-          }
-          if (author.role) {
-            meta.meta?.push({
-              $: { refines: `#creator-${idx}`, property: 'role', scheme: 'marc:relators' },
-              _: author.role,
-            });
-          }
-        }
-      });
-    } else {
-      if (updates.authors.length === 0) {
-        delete meta['dc:creator'];
-        return;
-      }
-      meta['dc:creator'] = updates.authors.map((author) => {
-        const entry: { _: string; $: Record<string, string> } = { _: nameOf(author), $: {} };
-        if (typeof author === 'object') {
-          if (author.role) entry.$['opf:role'] = author.role;
-          if (author.fileAs) entry.$['opf:file-as'] = sanitizeMetadataString(author.fileAs);
-        }
-        return entry;
-      });
-    }
+  if (authors.length === 0) {
+    // Their refinements go with them, in the orphan pass at the end of the write.
+    delete meta['dc:creator'];
     return;
   }
 
-  if (updates.author) {
-    const sanitizedAuthor = sanitizeMetadataString(updates.author);
-    meta['dc:creator'] = isEpub2
-      ? [{ _: sanitizedAuthor, $: {} }]
-      : [{ _: sanitizedAuthor, $: { id: 'creator-0' } }];
+  if (isEpub2) {
+    meta['dc:creator'] = authors.map((author) => {
+      const name = nameOf(author);
+      const match = matchOf(name);
+      if (typeof author === 'string' && match) return match;
+      const entry: { _: string; $: Record<string, string> } = { _: name, $: {} };
+      if (typeof author === 'object') {
+        if (author.role) entry.$['opf:role'] = author.role;
+        if (author.fileAs) entry.$['opf:file-as'] = sanitizeMetadataString(author.fileAs);
+      }
+      return entry;
+    });
+    return;
+  }
+
+  const written = authors.map((author) => {
+    const name = nameOf(author);
+    // xml:lang and dir survive on a matched element; the EPUB 2 attributes do
+    // not, since EPUB 3 does not allow them and the refinements below carry both.
+    const { 'opf:role': _role, 'opf:file-as': _fileAs, ...attrs } = attrsOf(matchOf(name));
+    const id = attrs.id || freshId('creator', taken);
+    return { author, name, attrs: { ...attrs, id }, matched: !!attrs.id };
+  });
+
+  // Replace the role/file-as of every creator being written — except a
+  // matched bare-name author, whose refinements are the only record of them.
+  const creatorIds = new Set(existing.map((c) => attrsOf(c).id).filter(Boolean));
+  const keep = new Set(
+    written.filter((w) => w.matched && typeof w.author === 'string').map((w) => w.attrs.id),
+  );
+  meta.meta = (meta.meta ?? []).filter((m) => {
+    const target = refinedId(m);
+    const prop = m.$?.property;
+    return !(
+      target &&
+      (prop === 'file-as' || prop === 'role') &&
+      creatorIds.has(target) &&
+      !keep.has(target)
+    );
+  });
+
+  meta['dc:creator'] = written.map(({ name, attrs }) => ({ _: name, $: attrs }));
+
+  for (const {
+    author,
+    attrs: { id },
+  } of written) {
+    if (typeof author !== 'object') continue;
+    if (author.fileAs) {
+      meta.meta.push({
+        $: { refines: `#${id}`, property: 'file-as' },
+        _: sanitizeMetadataString(author.fileAs),
+      });
+    }
+    if (author.role) {
+      meta.meta.push({
+        $: { refines: `#${id}`, property: 'role', scheme: 'marc:relators' },
+        _: author.role,
+      });
+    }
   }
 }
 
@@ -224,75 +325,70 @@ function writeContributors(meta: OpfMetadataNode, updates: MetadataUpdate): void
 }
 
 /**
- * The ISBN, added or updated in place while every other identifier is preserved.
+ * The ISBN, added, updated or cleared in place while every other identifier is
+ * preserved.
  *
  * The `unique-identifier` attribute is only set when the package had none: it is
  * referenced by the OPF's own id and repointing it at a new element breaks the
- * document for readers that resolve it.
+ * document for readers that resolve it. For the same reason an ISBN that *is*
+ * the unique identifier cannot be cleared — the package would point at nothing.
  */
 function writeIdentifier(
   pkg: OpfDocument['package'],
   meta: OpfMetadataNode,
   updates: MetadataUpdate,
   isEpub2: boolean,
+  taken: Set<string>,
   warnings: string[],
 ): void {
-  if (updates.identifier) {
-    const sanitizedId = sanitizeMetadataString(updates.identifier);
-    const cleanISBN = sanitizedId.replace(/[-\s]/g, '');
-    const isISBN10 = /^\d{9}[\dX]$/i.test(cleanISBN);
-    const isISBN13 = /^(978|979)\d{10}$/.test(cleanISBN);
+  if (updates.identifier !== undefined) {
+    const value = sanitizeMetadataString(updates.identifier).trim();
+    const identifiers = [...(meta['dc:identifier'] ?? [])];
+    const index = identifiers.findIndex((node) => isIsbnIdentifier(node, meta));
+    const current = index >= 0 ? identifiers[index]! : null;
+    const uniqueId = pkg.$?.['unique-identifier'];
 
-    const existingIdentifiers = meta['dc:identifier'] ?? [];
-    const existingArray = Array.isArray(existingIdentifiers)
-      ? existingIdentifiers
-      : [existingIdentifiers];
-
-    const uniqueIdRef = pkg.$?.['unique-identifier'];
-
-    let foundExistingISBN = false;
-    const updatedIdentifiers: XmlNode[] = existingArray.map((id) => {
-      const attrs = typeof id === 'string' ? {} : (id.$ ?? {});
-      const idAttr = attrs.id;
-      const value = textOf(id).trim();
-      const scheme = attrs['opf:scheme'];
-
-      const cleanValue = value.replace(/^urn:isbn:/i, '').replace(/[-\s]/g, '');
-      const isExistingISBN =
-        scheme === 'ISBN' ||
-        /^\d{9}[\dX]$/i.test(cleanValue) ||
-        /^(978|979)\d{10}$/.test(cleanValue);
-
-      if (isExistingISBN && (isISBN10 || isISBN13)) {
-        foundExistingISBN = true;
-        return {
-          _: sanitizedId,
-          $: { id: idAttr || 'pub-id', ...(scheme ? { 'opf:scheme': 'ISBN' } : {}) },
-        };
+    if (!value) {
+      if (current && uniqueId && attrsOf(current).id === uniqueId) {
+        warnings.push("The ISBN is also this book's unique identifier, so it was kept");
+      } else if (current) {
+        // Its identifier-type refinement goes in the orphan pass.
+        identifiers.splice(index, 1);
       }
-
-      // Anything else (ASIN, UUID, internal ids) survives untouched.
-      return id;
-    });
-
-    if (!foundExistingISBN && (isISBN10 || isISBN13)) {
-      const newIdAttr = 'pub-id';
-      updatedIdentifiers.push({ _: sanitizedId, $: { id: newIdAttr } });
-
+    } else if (!isIsbn(value)) {
+      warnings.push(`"${value}" is not an ISBN, so the identifier was left unchanged`);
+    } else if (current && bareIsbn(textOf(current)) === bareIsbn(value)) {
+      // Same ISBN, perhaps hyphenated differently: leave the element as it is.
+    } else if (current) {
+      // Keep the element's id and attributes, and its `urn:isbn:` form if it
+      // used one, so everything that points at it still does.
+      const urn = /^urn:isbn:/i.test(textOf(current).trim());
+      identifiers[index] = { _: urn ? `urn:isbn:${bareIsbn(value)}` : value, $: attrsOf(current) };
+      const code = bareIsbn(value).length === 13 ? '15' : '02';
+      const id = attrsOf(current).id;
+      const type = meta.meta?.find(
+        (m) =>
+          m.$?.property === 'identifier-type' &&
+          refinedId(m) === id &&
+          m.$.scheme === 'onix:codelist5',
+      );
+      if (id && type) type._ = code;
+    } else {
+      const id = taken.has('pub-id') ? freshId('pub-id', taken) : 'pub-id';
+      taken.add(id);
+      identifiers.push({ _: value, $: { id } });
       if (!isEpub2) {
-        meta.meta = (meta.meta ?? []).filter(
-          (m) => !(m.$?.refines === `#${newIdAttr}` && m.$?.property === 'identifier-type'),
-        );
+        meta.meta = meta.meta ?? [];
         meta.meta.push({
-          $: { refines: `#${newIdAttr}`, property: 'identifier-type', scheme: 'onix:codelist5' },
-          _: isISBN13 ? '15' : '02',
+          $: { refines: `#${id}`, property: 'identifier-type', scheme: 'onix:codelist5' },
+          _: bareIsbn(value).length === 13 ? '15' : '02',
         });
       }
-
-      if (!uniqueIdRef && pkg.$) pkg.$['unique-identifier'] = newIdAttr;
+      if (!uniqueId && pkg.$) pkg.$['unique-identifier'] = id;
     }
 
-    meta['dc:identifier'] = updatedIdentifiers;
+    if (identifiers.length > 0) meta['dc:identifier'] = identifiers;
+    else delete meta['dc:identifier'];
   }
 
   if (!meta['dc:identifier'] || meta['dc:identifier'].length === 0) {
@@ -315,60 +411,77 @@ function writeSubjects(meta: OpfMetadataNode, updates: MetadataUpdate): void {
  * `collection-type` and `group-position` refinement); EPUB 2 has none, so the
  * de-facto Calibre `<meta name="calibre:series">` is used there instead.
  *
+ * undefined leaves the series alone — in EPUB 3 too, where rebuilding it
+ * unconditionally once wiped the series of every book a partial update touched.
+ * Setting one updates the first series collection in place, keeping its id and
+ * anything else refining it; clearing removes every series collection. A `set`
+ * collection is not a series and is never touched.
+ *
+ * An EPUB 3 file that also carries Calibre's legacy meta (common after a
+ * conversion) gets it kept in step: left stale, it would make a cleared series
+ * reappear on the next read and show the old name in readers that prefer it.
+ *
  * EPUB 3 also gets its mandatory `dcterms:modified` stamp refreshed here, since
  * this is the only place the package is known to have changed.
  */
-function writeSeries(meta: OpfMetadataNode, updates: MetadataUpdate, isEpub2: boolean): void {
+function writeSeries(
+  meta: OpfMetadataNode,
+  updates: MetadataUpdate,
+  isEpub2: boolean,
+  taken: Set<string>,
+): void {
   meta.meta = meta.meta ?? [];
 
-  if (!isEpub2) {
-    meta.meta = meta.meta.filter(
-      (m) =>
-        m.$?.property !== 'belongs-to-collection' &&
-        m.$?.property !== 'group-position' &&
-        m.$?.property !== 'collection-type' &&
-        !m.$?.refines?.startsWith('#collection'),
-    );
-
-    if (updates.series) {
-      const sanitizedSeries = sanitizeMetadataString(updates.series);
-      meta.meta.push({
-        $: { property: 'belongs-to-collection', id: 'collection' },
-        _: sanitizedSeries,
-      });
-      meta.meta.push({ $: { property: 'collection-type', refines: '#collection' }, _: 'series' });
-      if (updates.seriesIndex) {
-        meta.meta.push({
-          $: { property: 'group-position', refines: '#collection' },
-          _: String(updates.seriesIndex),
-        });
-      }
-    }
-
-    // dcterms:modified is required for EPUB 3 and must be a UTC timestamp with
-    // no fractional seconds — `toISOString()` alone is rejected by epubcheck.
-    meta.meta = meta.meta.filter((m) => m.$?.property !== 'dcterms:modified');
-    const now = new Date().toISOString().replace(/\.\d{3}Z$/, 'Z');
-    meta.meta.push({ $: { property: 'dcterms:modified' }, _: now });
-    return;
-  }
-
-  // EPUB 2: undefined leaves the series untouched, '' clears it.
   if (updates.series !== undefined) {
+    const series = sanitizeMetadataString(updates.series).trim();
+    const index =
+      updates.seriesIndex === undefined ? '' : sanitizeMetadataString(String(updates.seriesIndex));
+
+    const hadCalibre = meta.meta.some((m) => m.$?.name === 'calibre:series');
     meta.meta = meta.meta.filter(
       (m) => m.$?.name !== 'calibre:series' && m.$?.name !== 'calibre:series_index',
     );
+    if (series && (isEpub2 || hadCalibre)) {
+      meta.meta.push({ $: { name: 'calibre:series', content: series } });
+      if (index) meta.meta.push({ $: { name: 'calibre:series_index', content: index } });
+    }
 
-    const sanitizedSeries = sanitizeMetadataString(updates.series);
-    if (sanitizedSeries) {
-      meta.meta.push({ $: { name: 'calibre:series', content: sanitizedSeries } });
-      if (updates.seriesIndex) {
-        meta.meta.push({
-          $: { name: 'calibre:series_index', content: String(updates.seriesIndex) },
-        });
+    if (!isEpub2) {
+      const collections = seriesCollections(meta);
+      if (!series) {
+        // Their collection-type and group-position go in the orphan pass.
+        const removed = new Set(collections);
+        meta.meta = meta.meta.filter((m) => !removed.has(m));
+      } else {
+        let collection = collections[0];
+        if (!collection) {
+          collection = { $: { property: 'belongs-to-collection' } };
+          meta.meta.push(collection);
+        }
+        collection._ = series;
+        const $ = (collection.$ ??= {});
+        const id = ($.id ||= freshId('collection', taken));
+
+        const refines = (property: string) => (m: MetaElement) =>
+          m.$?.property === property && refinedId(m) === id;
+        if (!meta.meta.some(refines('collection-type'))) {
+          meta.meta.push({ $: { property: 'collection-type', refines: `#${id}` }, _: 'series' });
+        }
+        meta.meta = meta.meta.filter((m) => !refines('group-position')(m));
+        if (index) {
+          meta.meta.push({ $: { property: 'group-position', refines: `#${id}` }, _: index });
+        }
       }
     }
   }
+
+  if (isEpub2) return;
+
+  // dcterms:modified is required for EPUB 3 and must be a UTC timestamp with
+  // no fractional seconds — `toISOString()` alone is rejected by epubcheck.
+  meta.meta = meta.meta.filter((m) => m.$?.property !== 'dcterms:modified');
+  const now = new Date().toISOString().replace(/\.\d{3}Z$/, 'Z');
+  meta.meta.push({ $: { property: 'dcterms:modified' }, _: now });
 }
 
 /**

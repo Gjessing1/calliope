@@ -4,6 +4,8 @@ import { normalizeLanguageCode } from './language.js';
 import { normalizeDateFormat, normalizeMetadata, stripHTML } from './normalize.js';
 import { extractMetadata, readEpub } from './read.js';
 import { writeEpub } from './write.js';
+import type { MetadataUpdate } from '@calliope/core';
+import { collectIds, refinedId } from './opf.js';
 import { sanitizeMetadataString } from './sanitize.js';
 
 const CONTAINER = `<?xml version="1.0"?>
@@ -285,6 +287,197 @@ describe('writeEpub — EPUB 3', () => {
       'EPUB requires a title (dc:title)',
       'EPUB requires at least one identifier (dc:identifier)',
     ]);
+  });
+});
+
+/**
+ * The shape Project Gutenberg ships and this library is full of: a translator as
+ * a `dc:contributor` whose role and sort name are refinements, next to the
+ * author's own, plus a set collection that is not a series.
+ */
+const GUTENBERG_META = `    <dc:identifier id="bookid">http://www.gutenberg.org/1004</dc:identifier>
+    <dc:creator id="author_0">Dante Alighieri</dc:creator>
+    <meta property="file-as" refines="#author_0">Dante Alighieri</meta>
+    <meta property="role" refines="#author_0" scheme="marc:relators">aut</meta>
+    <meta property="alternate-script" refines="#author_0" xml:lang="it">Durante degli Alighieri</meta>
+    <meta property="file-as" refines="#author_1">Longfellow, Henry Wadsworth</meta>
+    <meta property="role" refines="#author_1" scheme="marc:relators">trl</meta>
+    <dc:contributor id="author_1">Henry Wadsworth Longfellow</dc:contributor>
+    <dc:title id="main">The Divine Comedy</dc:title>
+    <meta property="file-as" refines="#main">Divine Comedy, The</meta>
+    <meta property="belongs-to-collection" id="set">Harvard Classics</meta>
+    <meta property="collection-type" refines="#set">set</meta>
+    <meta property="group-position" refines="#set">20</meta>
+    <meta property="belongs-to-collection" id="c1">Commedia</meta>
+    <meta property="collection-type" refines="#c1">series</meta>
+    <meta property="group-position" refines="#c1">1</meta>
+    <dc:language>en</dc:language>`;
+
+/** What the editor sends: every field, straight from what the reader returned. */
+function editorForm(buffer: Buffer): Promise<MetadataUpdate> {
+  return readEpub(buffer).then(({ meta }) => {
+    const m = extractMetadata(meta);
+    return {
+      ...m,
+      contributors: m.contributors.map((c) => c.name).join(', '),
+    };
+  });
+}
+
+async function edit(buffer: Buffer, update: MetadataUpdate): Promise<Buffer> {
+  const opened = await readEpub(buffer);
+  return (await writeEpub(opened.zip, opened.opfPath, opened.opf, update)).buffer;
+}
+
+/** Every `<meta refines>` whose target id is nowhere in the package. */
+async function danglingRefinements(buffer: Buffer): Promise<string[]> {
+  const { opf, meta } = await readEpub(buffer);
+  const ids = collectIds(opf.package);
+  return (meta.meta ?? [])
+    .map((m) => refinedId(m))
+    .filter((id): id is string => id !== null && !ids.has(id));
+}
+
+describe('writeEpub — what an edit must not break (EPUB 3)', () => {
+  it("keeps the translator's role when the author list is rewritten", async () => {
+    const book = await makeEpub('3.0', GUTENBERG_META);
+    const saved = await edit(book, { ...(await editorForm(book)), title: 'Inferno' });
+    const back = extractMetadata((await readEpub(saved)).meta);
+    expect(back.contributors).toEqual([{ name: 'Henry Wadsworth Longfellow', role: 'trl' }]);
+    expect(back.authors).toEqual([
+      { name: 'Dante Alighieri', role: 'aut', fileAs: 'Dante Alighieri' },
+    ]);
+    expect(await danglingRefinements(saved)).toEqual([]);
+  });
+
+  it("keeps an unchanged author's id, so its other refinements stay attached", async () => {
+    const book = await makeEpub('3.0', GUTENBERG_META);
+    const saved = await edit(book, await editorForm(book));
+    const { meta } = await readEpub(saved);
+    expect(meta.meta?.find((m) => m.$?.property === 'alternate-script')?.$?.refines).toBe(
+      '#author_0',
+    );
+    expect(await danglingRefinements(saved)).toEqual([]);
+  });
+
+  it('drops the refinements of an author or contributor it removes', async () => {
+    const book = await makeEpub('3.0', GUTENBERG_META);
+    const saved = await edit(book, {
+      authors: [{ name: 'Someone Else', role: 'aut', fileAs: null }],
+      contributors: '',
+    });
+    const { meta } = await readEpub(saved);
+    expect(await danglingRefinements(saved)).toEqual([]);
+    expect(meta.meta?.some((m) => m.$?.property === 'alternate-script')).toBe(false);
+    expect(meta.meta?.some((m) => m._ === 'trl')).toBe(false);
+  });
+
+  it('leaves the series alone when the update does not mention it', async () => {
+    const book = await makeEpub('3.0', GUTENBERG_META);
+    const saved = await edit(book, { language: 'it' });
+    const back = extractMetadata((await readEpub(saved)).meta);
+    expect(back.series).toBe('Commedia');
+    expect(back.seriesIndex).toBe('1');
+  });
+
+  it('reads and writes the series, never the set beside it', async () => {
+    const book = await makeEpub('3.0', GUTENBERG_META);
+    expect(extractMetadata((await readEpub(book)).meta).series).toBe('Commedia');
+
+    const renamed = await edit(book, { series: 'Divina Commedia', seriesIndex: '2' });
+    const back = extractMetadata((await readEpub(renamed)).meta);
+    expect([back.series, back.seriesIndex]).toEqual(['Divina Commedia', '2']);
+
+    const cleared = await edit(renamed, { series: '', seriesIndex: '' });
+    const { meta } = await readEpub(cleared);
+    expect(extractMetadata(meta).series).toBe('');
+    const set = meta.meta?.find((m) => m.$?.id === 'set');
+    expect(set?._).toBe('Harvard Classics');
+    expect(meta.meta?.some((m) => m.$?.refines === '#set' && m._ === '20')).toBe(true);
+    expect(await danglingRefinements(cleared)).toEqual([]);
+  });
+
+  it("keeps Calibre's legacy series meta in step, so a cleared series stays cleared", async () => {
+    const book = await makeEpub(
+      '3.0',
+      `${BASE_META}\n    <meta name="calibre:series" content="Old"/>\n    <meta name="calibre:series_index" content="4"/>`,
+    );
+    expect(extractMetadata((await readEpub(book)).meta).series).toBe('Old');
+    const cleared = await edit(book, { series: '', seriesIndex: '' });
+    expect(extractMetadata((await readEpub(cleared)).meta).series).toBe('');
+
+    const renamed = await edit(book, { series: 'New', seriesIndex: '5' });
+    const { meta } = await readEpub(renamed);
+    expect(meta.meta?.find((m) => m.$?.name === 'calibre:series')?.$?.content).toBe('New');
+    expect(extractMetadata(meta).series).toBe('New');
+  });
+
+  it('keeps an unchanged title element, and with it the sort title', async () => {
+    const book = await makeEpub('3.0', GUTENBERG_META);
+    const saved = await edit(book, await editorForm(book));
+    const { meta } = await readEpub(saved);
+    expect(meta.meta?.some((m) => m.$?.refines === '#main' && m._ === 'Divine Comedy, The')).toBe(
+      true,
+    );
+
+    const retitled = await edit(book, { title: 'Inferno' });
+    expect(await danglingRefinements(retitled)).toEqual([]);
+  });
+
+  it('does not touch a subtitle when the title is not being edited', async () => {
+    const book = await makeEpub(
+      '3.0',
+      `    <dc:identifier id="bookid">x</dc:identifier>
+    <dc:title id="t1">The Trial</dc:title>
+    <meta refines="#t1" property="title-type">main</meta>
+    <dc:title id="t2">A Novel</dc:title>
+    <meta refines="#t2" property="title-type">subtitle</meta>`,
+    );
+    const saved = await edit(book, { language: 'de' });
+    expect(extractMetadata((await readEpub(saved)).meta).subtitle).toBe('A Novel');
+  });
+});
+
+describe('writeEpub — the ISBN', () => {
+  const WITH_ISBN = `${BASE_META}
+    <dc:identifier id="isbn">urn:isbn:9780140449136</dc:identifier>
+    <meta refines="#isbn" property="identifier-type" scheme="onix:codelist5">15</meta>`;
+
+  it('clears the ISBN on an empty string, and its refinement with it', async () => {
+    const saved = await edit(await makeEpub('3.0', WITH_ISBN), { identifier: '' });
+    expect(extractMetadata((await readEpub(saved)).meta).identifier).toBe('');
+    expect(await danglingRefinements(saved)).toEqual([]);
+  });
+
+  it('keeps an ISBN that is the unique identifier, and says why', async () => {
+    const book = await makeEpub(
+      '3.0',
+      `    <dc:title>x</dc:title>\n    <dc:identifier id="bookid">9780140449136</dc:identifier>`,
+    );
+    const opened = await readEpub(book);
+    const { buffer, warnings } = await writeEpub(opened.zip, opened.opfPath, opened.opf, {
+      identifier: '',
+    });
+    expect(extractMetadata((await readEpub(buffer)).meta).identifier).toBe('9780140449136');
+    expect(warnings).toEqual(["The ISBN is also this book's unique identifier, so it was kept"]);
+  });
+
+  it('warns instead of silently dropping something that is not an ISBN', async () => {
+    const opened = await readEpub(await makeEpub('3.0', WITH_ISBN));
+    const { buffer, warnings } = await writeEpub(opened.zip, opened.opfPath, opened.opf, {
+      identifier: '12345',
+    });
+    expect(warnings).toEqual(['"12345" is not an ISBN, so the identifier was left unchanged']);
+    expect(extractMetadata((await readEpub(buffer)).meta).identifier).toBe('9780140449136');
+  });
+
+  it('updates in place: same element, same urn form, identifier-type kept right', async () => {
+    const saved = await edit(await makeEpub('3.0', WITH_ISBN), { identifier: '0140449132' });
+    const { meta } = await readEpub(saved);
+    const isbn = meta['dc:identifier']?.find((n) => typeof n !== 'string' && n.$?.id === 'isbn');
+    expect(typeof isbn === 'string' ? isbn : isbn?._).toBe('urn:isbn:0140449132');
+    expect(meta.meta?.find((m) => m.$?.refines === '#isbn')?._).toBe('02');
+    expect(meta['dc:identifier']).toHaveLength(2);
   });
 });
 
