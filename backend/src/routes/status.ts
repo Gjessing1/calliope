@@ -23,5 +23,6 @@ export function statusRoutes(app: FastifyInstance, state: AppState): void {
       ? { configured: true, url: state.config.abs?.url, error: state.absError }
       : { configured: false },
     backupOnSave: state.config.backupOnSave,
+    revisionLimit: state.config.revisionLimit,
   }));
 }

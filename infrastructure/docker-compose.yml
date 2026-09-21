@@ -12,15 +12,18 @@ services:
     ports:
       - '3008:3008'
     environment:
-      # Calliope's own state: the SQLite index and the cover cache. Kept OUT of
-      # the library directory — that one is watched by Audiobookshelf, and cache
-      # files dropped in there make it rescan, or adopt them as book assets.
+      # Calliope's own state: the SQLite index, cover cache and bounded revision
+      # history. Kept OUT of the library directory — that one is watched by
+      # Audiobookshelf, and extra files there can be adopted as book assets.
       CALLIOPE_DATA_DIR: /data
       CALLIOPE_LIBRARY_ROOT: /books
       # Keep <book>.epub.bak beside each book on save. Off by default: the write
       # is already atomic, and a .bak in the library directory is a file
       # Audiobookshelf will also see.
       CALLIOPE_BACKUP_ON_SAVE: 'false'
+      # Full pre-write EPUB snapshots under /data/revisions. Restores are exact
+      # and reversible; old snapshots are pruned per book.
+      CALLIOPE_REVISION_LIMIT: '10'
       # Audiobookshelf integration. Both must be set or ABS is treated as
       # unconfigured; the token comes from ABS → Settings → Users → API Token.
       ABS_URL: http://audiobookshelf:80

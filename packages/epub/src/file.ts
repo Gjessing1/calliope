@@ -41,6 +41,8 @@ export interface SaveOptions {
   /** Keep the original alongside the new file as `<name>.epub.bak`. */
   backup?: boolean;
   cover?: Buffer | null;
+  /** Exact EPUB bytes to restore instead of applying metadata updates. */
+  replacement?: Buffer;
 }
 
 /**
@@ -62,14 +64,19 @@ export async function saveEpubFile(
   updates: MetadataUpdate,
   options: SaveOptions = {},
 ): Promise<SaveResult> {
-  const opened = await openEpubFile(filePath);
-  const result = await writeEpub(
-    opened.zip,
-    opened.opfPath,
-    opened.opf,
-    updates,
-    options.cover ?? null,
-  );
+  // Parsing replacement bytes before touching the library prevents a corrupt
+  // history entry from replacing a valid book. Restore still comes through this
+  // function so it gets the same same-directory atomic commit as a normal edit.
+  const replacement = options.replacement;
+  const result = replacement
+    ? await (async () => {
+        await readEpub(replacement);
+        return { buffer: replacement, warnings: [] };
+      })()
+    : await (async () => {
+        const opened = await openEpubFile(filePath);
+        return writeEpub(opened.zip, opened.opfPath, opened.opf, updates, options.cover ?? null);
+      })();
 
   const dir = path.dirname(filePath);
   const tmpPath = path.join(dir, `.${path.basename(filePath)}.${process.pid}.tmp`);

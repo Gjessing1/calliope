@@ -5,10 +5,11 @@ import JSZip from 'jszip';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { AbsBook, LibraryBook } from '@calliope/core';
 import { emptyMetadata } from '@calliope/core';
-import { bookId } from '@calliope/epub';
+import { bookId, readEpubFile, saveEpubFile } from '@calliope/epub';
 import { CoverCache } from './covers.js';
 import { LibraryIndex, ftsQuery } from './index-db.js';
 import { absDrift } from './merge.js';
+import { RevisionStore } from './revisions.js';
 import { findEpubs, scanLibrary } from './scan.js';
 
 let root: string;
@@ -134,6 +135,43 @@ describe('scanLibrary', () => {
   });
 });
 
+describe('RevisionStore', () => {
+  it('keeps the exact pre-write EPUB outside the library and can restore it atomically', async () => {
+    const relative = 'Sult/Sult.epub';
+    const file = path.join(root, 'books', relative);
+    await writeEpubAt(relative, 'Sult', 'Knut Hamsun');
+
+    const revisions = new RevisionStore(path.join(root, 'data', 'revisions'));
+    await revisions.init();
+    const saved = await revisions.capture(bookId(relative), file);
+
+    await saveEpubFile(file, { title: 'Hunger' });
+    expect((await readEpubFile(file)).metadata.title).toBe('Hunger');
+
+    const snapshot = await revisions.read(bookId(relative), saved.id);
+    expect(snapshot).not.toBeNull();
+    await saveEpubFile(file, {}, { replacement: snapshot! });
+    expect((await readEpubFile(file)).metadata.title).toBe('Sult');
+    expect(await revisions.list(bookId(relative))).toMatchObject([
+      { id: saved.id, metadata: { title: 'Sult' } },
+    ]);
+  });
+
+  it('prunes old snapshots to the configured per-book limit', async () => {
+    const relative = 'Sult/Sult.epub';
+    const file = path.join(root, 'books', relative);
+    await writeEpubAt(relative, 'Sult', 'Knut Hamsun');
+    const revisions = new RevisionStore(path.join(root, 'data', 'revisions'), 2);
+    await revisions.init();
+
+    await revisions.capture(bookId(relative), file);
+    await revisions.capture(bookId(relative), file);
+    await revisions.capture(bookId(relative), file);
+
+    expect(await revisions.list(bookId(relative))).toHaveLength(2);
+  });
+});
+
 describe('LibraryIndex', () => {
   const makeBook = (title: string, author: string, series = ''): LibraryBook => ({
     id: bookId(`${title}.epub`),
@@ -170,6 +208,8 @@ describe('LibraryIndex', () => {
     // Prefix matching: the search box filters while the user is still typing.
     expect(index.list({ search: 'dosto' })).toHaveLength(1);
     expect(index.list({ search: 'peace' })).toHaveLength(1);
+    expect(index.count('dosto')).toBe(1);
+    expect(index.count()).toBe(3);
 
     index.close();
   });

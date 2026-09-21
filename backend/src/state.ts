@@ -1,8 +1,15 @@
 import { mkdir } from 'node:fs/promises';
 import type { MergedBook, ScanSummary } from '@calliope/core';
-import { AbsClient, CoverCache, LibraryIndex, mergeAbs, scanLibrary } from '@calliope/library';
+import {
+  AbsClient,
+  CoverCache,
+  LibraryIndex,
+  mergeAbs,
+  RevisionStore,
+  scanLibrary,
+} from '@calliope/library';
 import type { Config } from './config.js';
-import { coverDir, indexPath } from './config.js';
+import { coverDir, indexPath, revisionDir } from './config.js';
 
 /**
  * Everything the routes share: the index, the cover cache, the optional ABS
@@ -15,15 +22,18 @@ import { coverDir, indexPath } from './config.js';
 export class AppState {
   readonly index: LibraryIndex;
   readonly covers: CoverCache;
+  readonly revisions: RevisionStore;
   readonly abs: AbsClient | null;
 
   private scanning: Promise<ScanSummary> | null = null;
+  private readonly bookWrites = new Map<string, Promise<void>>();
   lastScan: ScanSummary | null = null;
   absError: string | null = null;
 
   constructor(readonly config: Config) {
     this.index = new LibraryIndex(indexPath(config));
     this.covers = new CoverCache(coverDir(config));
+    this.revisions = new RevisionStore(revisionDir(config), config.revisionLimit);
     this.abs = config.abs ? new AbsClient(config.abs) : null;
   }
 
@@ -31,6 +41,7 @@ export class AppState {
     await mkdir(config.dataDir, { recursive: true });
     const state = new AppState(config);
     await state.covers.init();
+    await state.revisions.init();
     return state;
   }
 
@@ -53,6 +64,22 @@ export class AppState {
 
   get isScanning(): boolean {
     return this.scanning !== null;
+  }
+
+  /** Serialize capture + write + reindex for one book so every undo point is real. */
+  async writeBook<T>(bookId: string, operation: () => Promise<T>): Promise<T> {
+    const previous = this.bookWrites.get(bookId) ?? Promise.resolve();
+    const current = previous.catch(() => {}).then(operation);
+    const tail = current.then(
+      () => undefined,
+      () => undefined,
+    );
+    this.bookWrites.set(bookId, tail);
+    try {
+      return await current;
+    } finally {
+      if (this.bookWrites.get(bookId) === tail) this.bookWrites.delete(bookId);
+    }
   }
 
   /**

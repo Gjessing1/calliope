@@ -135,7 +135,7 @@ function writeAuthors(meta: OpfMetadataNode, updates: MetadataUpdate, isEpub2: b
   const nameOf = (author: Author | string): string =>
     sanitizeMetadataString(typeof author === 'string' ? author : author.name);
 
-  if (updates.authors && Array.isArray(updates.authors) && updates.authors.length > 0) {
+  if (updates.authors !== undefined && Array.isArray(updates.authors)) {
     if (!isEpub2) {
       // Drop every existing role/file-as refinement, whatever id it points at:
       // the creator ids are about to be reassigned, so any surviving refinement
@@ -145,6 +145,11 @@ function writeAuthors(meta: OpfMetadataNode, updates: MetadataUpdate, isEpub2: b
         const refines = m.$?.refines;
         return !((prop === 'file-as' || prop === 'role') && refines);
       });
+
+      if (updates.authors.length === 0) {
+        delete meta['dc:creator'];
+        return;
+      }
 
       meta['dc:creator'] = updates.authors.map((author, idx) => ({
         _: nameOf(author),
@@ -168,6 +173,10 @@ function writeAuthors(meta: OpfMetadataNode, updates: MetadataUpdate, isEpub2: b
         }
       });
     } else {
+      if (updates.authors.length === 0) {
+        delete meta['dc:creator'];
+        return;
+      }
       meta['dc:creator'] = updates.authors.map((author) => {
         const entry: { _: string; $: Record<string, string> } = { _: nameOf(author), $: {} };
         if (typeof author === 'object') {

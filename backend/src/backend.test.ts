@@ -21,6 +21,13 @@ describe('loadConfig', () => {
     expect(loadConfig({}).backupOnSave).toBe(false);
     expect(loadConfig({}).scanOnStart).toBe(true);
   });
+
+  it('keeps a bounded revision history enabled with a safe limit', () => {
+    expect(loadConfig({}).revisionLimit).toBe(10);
+    expect(loadConfig({ CALLIOPE_REVISION_LIMIT: '4' }).revisionLimit).toBe(4);
+    expect(loadConfig({ CALLIOPE_REVISION_LIMIT: '0' }).revisionLimit).toBe(1);
+    expect(loadConfig({ CALLIOPE_REVISION_LIMIT: 'not-a-number' }).revisionLimit).toBe(10);
+  });
 });
 
 describe('resolveBookPath', () => {

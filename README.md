@@ -23,11 +23,13 @@ lookup. BookPrep edits one uploaded book and hands it back. Calliope edits the l
 - **Standards-compliant writes** — EPUB 2 files get EPUB 2 metadata, EPUB 3 files get EPUB 3
   metadata, and the version is never upgraded. Identifiers and vendor metadata the tool does not
   understand are preserved exactly.
+- **Reviewed, recoverable saves** — a before/after confirmation precedes every write, the current
+  EPUB is retained in a bounded private history, and any previous file or cover can be restored.
 - **Atomic saves** — the rebuilt file is written beside the original and renamed over it, so a
   failure never leaves a truncated book.
 - **Metadata lookup** — ISBN and title search across Google Books, Open Library and Apple Books,
   always reviewed before it is applied.
-- **Cover search and replacement**, with automatic resizing and transparency flattening.
+- **Cover search, upload and history**, with automatic resizing and transparency flattening.
 - **Audiobookshelf integration** — shows where your reader's view and the file itself disagree, and
   asks ABS to rescan after a save.
 - **Web and Android** from one codebase.
@@ -50,18 +52,19 @@ including the Audiobookshelf wiring.
 
 ### Configuration
 
-| Variable                  | Default  | What it does                                            |
-| ------------------------- | -------- | ------------------------------------------------------- |
-| `PORT`                    | `3008`   | HTTP port                                               |
-| `CALLIOPE_LIBRARY_ROOT`   | `/books` | The ebook library. Mounted read-write.                  |
-| `CALLIOPE_DATA_DIR`       | `./data` | Index and cover cache. Keep it **outside** the library. |
-| `CALLIOPE_BACKUP_ON_SAVE` | `false`  | Keep a `.bak` beside each edited book                   |
-| `CALLIOPE_SCAN_ON_START`  | `true`   | Walk the library at startup                             |
-| `ABS_URL`                 | —        | Audiobookshelf origin. Optional.                        |
-| `ABS_TOKEN`               | —        | Audiobookshelf API token. Required with `ABS_URL`.      |
-| `ABS_BOOKS_ROOT`          | `/books` | Where the library is mounted inside the ABS container   |
-| `ABS_LIBRARY_ID`          | —        | Restrict to one ABS library                             |
-| `ABS_RESCAN_ON_SAVE`      | `true`   | Ask ABS to rescan after a write                         |
+| Variable                  | Default  | What it does                                                   |
+| ------------------------- | -------- | -------------------------------------------------------------- |
+| `PORT`                    | `3008`   | HTTP port                                                      |
+| `CALLIOPE_LIBRARY_ROOT`   | `/books` | The ebook library. Mounted read-write.                         |
+| `CALLIOPE_DATA_DIR`       | `./data` | Index, cover cache and revisions. Keep it outside the library. |
+| `CALLIOPE_REVISION_LIMIT` | `10`     | Full pre-write EPUB snapshots retained per book                |
+| `CALLIOPE_BACKUP_ON_SAVE` | `false`  | Keep a `.bak` beside each edited book                          |
+| `CALLIOPE_SCAN_ON_START`  | `true`   | Walk the library at startup                                    |
+| `ABS_URL`                 | —        | Audiobookshelf origin. Optional.                               |
+| `ABS_TOKEN`               | —        | Audiobookshelf API token. Required with `ABS_URL`.             |
+| `ABS_BOOKS_ROOT`          | `/books` | Where the library is mounted inside the ABS container          |
+| `ABS_LIBRARY_ID`          | —        | Restrict to one ABS library                                    |
+| `ABS_RESCAN_ON_SAVE`      | `true`   | Ask ABS to rescan after a write                                |
 
 ## Development
 
@@ -94,7 +97,7 @@ See [apps/android/README.md](apps/android/README.md).
 - **Metadata only.** Book content, structure and reading experience are never touched.
 - **EPUB only.** Other formats are deliberately out of scope.
 - **Nothing is applied without review.** A wrong ISBN match would rewrite a real book in a real
-  library, and the old values would be gone.
+  library; confirmation and private revision history make that visible and recoverable.
 
 ## License
 

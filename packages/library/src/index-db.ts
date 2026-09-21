@@ -134,7 +134,16 @@ export class LibraryIndex {
     );
   }
 
-  count(): number {
+  count(search?: string): number {
+    if (search?.trim()) {
+      return (
+        asRow<{ n: number }>(
+          this.db
+            .prepare('SELECT COUNT(*) AS n FROM books_fts WHERE books_fts MATCH ?')
+            .get(ftsQuery(search)),
+        )?.n ?? 0
+      );
+    }
     return asRow<{ n: number }>(this.db.prepare('SELECT COUNT(*) AS n FROM books').get())?.n ?? 0;
   }
 

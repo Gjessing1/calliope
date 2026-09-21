@@ -236,6 +236,23 @@ describe('writeEpub — EPUB 3', () => {
     expect(extractMetadata(reopened.meta).authors[0]?.role).toBe('trl');
   });
 
+  it('can explicitly clear every author and its refinements', async () => {
+    const opened = await readEpub(await makeEpub('3.0', BASE_META));
+    const first = await writeEpub(opened.zip, opened.opfPath, opened.opf, {
+      authors: [{ name: 'Constance Garnett', role: 'trl', fileAs: 'Garnett, Constance' }],
+    });
+    const withRefinements = await readEpub(first.buffer);
+    const cleared = await writeEpub(
+      withRefinements.zip,
+      withRefinements.opfPath,
+      withRefinements.opf,
+      { authors: [] },
+    );
+    const reopened = await readEpub(cleared.buffer);
+    expect(reopened.meta['dc:creator']).toBeUndefined();
+    expect(reopened.meta.meta?.some((meta) => meta.$?.property === 'role')).toBe(false);
+  });
+
   it('stamps dcterms:modified exactly once', async () => {
     const opened = await readEpub(await makeEpub('3.0', BASE_META));
     const once = await writeEpub(opened.zip, opened.opfPath, opened.opf, { title: 'a' });

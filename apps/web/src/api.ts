@@ -1,4 +1,6 @@
 import type {
+  BookRevision,
+  BookMetadata,
   CoverCandidate,
   LookupResult,
   MergedBook,
@@ -49,6 +51,7 @@ export interface SaveResponse {
   saved: true;
   warnings: string[];
   backupPath: string | null;
+  revision: BookRevision;
   bytes: number;
   absRescan: 'ok' | 'failed' | 'skipped';
   book: MergedBook;
@@ -65,6 +68,7 @@ export interface Status {
   };
   audiobookshelf: { configured: boolean; url?: string; error?: string | null };
   backupOnSave: boolean;
+  revisionLimit: number;
 }
 
 export const api = {
@@ -83,14 +87,38 @@ export const api = {
   scan: (force = false) =>
     request<{ started: boolean }>(`/api/library/scan?force=${force}`, { method: 'POST' }),
 
-  save: (id: string, metadata: MetadataUpdate, coverUrl?: string) =>
+  save: (
+    id: string,
+    metadata: MetadataUpdate,
+    expectedMtimeMs: number,
+    expectedFileSize: number,
+    cover?: { url?: string; data?: string; revisionId?: string },
+  ) =>
     request<SaveResponse>(`/api/books/${id}/metadata`, {
       method: 'PUT',
-      body: JSON.stringify({ metadata, coverUrl }),
+      body: JSON.stringify({
+        metadata,
+        expectedMtimeMs,
+        expectedFileSize,
+        coverUrl: cover?.url,
+        coverData: cover?.data,
+        coverRevisionId: cover?.revisionId,
+      }),
     }),
 
-  normalize: (id: string) =>
-    request<Record<string, unknown>>(`/api/books/${id}/normalize`, { method: 'POST' }),
+  revisions: (id: string) => request<{ revisions: BookRevision[] }>(`/api/books/${id}/revisions`),
+
+  restore: (id: string, revisionId: string, expectedMtimeMs: number, expectedFileSize: number) =>
+    request<SaveResponse>(`/api/books/${id}/revisions/${revisionId}/restore`, {
+      method: 'POST',
+      body: JSON.stringify({ expectedMtimeMs, expectedFileSize }),
+    }),
+
+  normalize: (id: string, metadata: BookMetadata) =>
+    request<BookMetadata & { _warnings?: string[] }>(`/api/books/${id}/normalize`, {
+      method: 'POST',
+      body: JSON.stringify({ metadata }),
+    }),
 
   lookupIsbn: (isbn: string) =>
     request<LookupResult>(`/api/lookup/isbn?isbn=${encodeURIComponent(isbn)}`),
@@ -105,6 +133,8 @@ export const api = {
   },
 
   coverUrl: (id: string) => `${API_ORIGIN}/api/books/${id}/cover`,
+  revisionCoverUrl: (id: string, revisionId: string) =>
+    `${API_ORIGIN}/api/books/${id}/revisions/${revisionId}/cover`,
   proxiedCover: (url: string) =>
     `${API_ORIGIN}/api/lookup/cover-proxy?url=${encodeURIComponent(url)}`,
 };

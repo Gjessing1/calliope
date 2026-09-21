@@ -12,8 +12,10 @@ export interface Config {
   host: string;
   /** The ebook library. Read-write: this is where metadata edits land. */
   libraryRoot: string;
-  /** Calliope's own state: the index and the cover cache. Never inside the library. */
+  /** Calliope's own state: index, cover cache and revisions. Never inside the library. */
   dataDir: string;
+  /** Number of full pre-write EPUB snapshots retained per book. */
+  revisionLimit: number;
   /** Keep a `.bak` beside a book on every save. */
   backupOnSave: boolean;
   /** Walk the library on startup. */
@@ -33,6 +35,7 @@ const bool = (value: string | undefined, fallback: boolean): boolean =>
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const dataDir = env.CALLIOPE_DATA_DIR ?? path.resolve('data');
+  const requestedRevisionLimit = Number(env.CALLIOPE_REVISION_LIMIT ?? 10);
 
   // ABS is entirely optional. Configuring a URL without a token is far more
   // likely to be a half-finished setup than an intentional anonymous ABS, so it
@@ -45,6 +48,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     host: env.HOST ?? '0.0.0.0',
     libraryRoot: env.CALLIOPE_LIBRARY_ROOT ?? '/books',
     dataDir,
+    revisionLimit: Number.isFinite(requestedRevisionLimit)
+      ? Math.max(1, Math.floor(requestedRevisionLimit))
+      : 10,
     backupOnSave: bool(env.CALLIOPE_BACKUP_ON_SAVE, false),
     scanOnStart: bool(env.CALLIOPE_SCAN_ON_START, true),
     abs:
@@ -62,3 +68,4 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
 
 export const indexPath = (config: Config): string => path.join(config.dataDir, 'calliope.sqlite');
 export const coverDir = (config: Config): string => path.join(config.dataDir, 'covers');
+export const revisionDir = (config: Config): string => path.join(config.dataDir, 'revisions');

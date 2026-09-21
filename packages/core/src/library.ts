@@ -76,3 +76,13 @@ export interface ScanSummary {
   finishedAt: number;
   errors: Array<{ path: string; message: string }>;
 }
+
+/** A recoverable pre-write snapshot kept in Calliope's data directory. */
+export interface BookRevision {
+  id: string;
+  /** When the snapshot was captured, in epoch ms. */
+  createdAt: number;
+  bytes: number;
+  metadata: BookMetadata;
+  hasCover: boolean;
+}
