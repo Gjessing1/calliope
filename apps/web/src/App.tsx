@@ -18,6 +18,8 @@ export function App(): JSX.Element {
   const [view, setView] = useState<LibraryView>('title');
   const [driftOnly, setDriftOnly] = useState(false);
   const [driftCount, setDriftCount] = useState(0);
+  const [healthOnly, setHealthOnly] = useState(false);
+  const [healthCount, setHealthCount] = useState(0);
   const [selected, setSelected] = useState<MergedBook | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -36,7 +38,7 @@ export function App(): JSX.Element {
       // Group headings must describe the whole result, not whichever 200 books
       // happened to fit in the API's default page. A personal library remains
       // small enough to load, while the loop still respects the API page cap.
-      const params = { search, sort: view, drift: driftOnly, limit: 1000 };
+      const params = { search, sort: view, drift: driftOnly, health: healthOnly, limit: 1000 };
       const page = await api.library(params);
       const loaded = [...page.books];
       while (loaded.length < page.total) {
@@ -47,18 +49,24 @@ export function App(): JSX.Element {
       setBooks(loaded);
       setTotal(page.total);
       setError(null);
-      // How many books disagree with ABS, whatever the search: the count is
-      // what tells a person there is something to review at all.
-      const differing = driftOnly
-        ? page.total
-        : (await api.library({ drift: true, limit: 1 }).catch(() => null))?.total;
+      // Counts describe the whole library, whatever the search: they are what
+      // tells a person there is something to review at all.
+      const [differing, unhealthy] = await Promise.all([
+        driftOnly && !healthOnly
+          ? page.total
+          : (await api.library({ drift: true, limit: 1 }).catch(() => null))?.total,
+        healthOnly && !driftOnly
+          ? page.total
+          : (await api.library({ health: true, limit: 1 }).catch(() => null))?.total,
+      ]);
       if (differing !== undefined) setDriftCount(differing);
+      if (unhealthy !== undefined) setHealthCount(unhealthy);
     } catch (err) {
       setError((err as Error).message);
     } finally {
       setLoading(false);
     }
-  }, [search, view, driftOnly]);
+  }, [search, view, driftOnly, healthOnly]);
 
   // Debounced: the search box filters as the user types, and one request per
   // keystroke over a large library is wasted work on both ends.
@@ -178,8 +186,9 @@ export function App(): JSX.Element {
   const onSaved = (book: MergedBook): void => {
     setBooks((current) => current.map((b) => (b.id === book.id ? book : b)));
     setSelected(book);
-    // A save moves the book in a "recently modified" list; refetch for the order.
-    if (view === 'modified') void reload();
+    // A save can move the book in a sorted/filtered view and can add or remove
+    // a duplicate-ISBN issue from another book, so refresh the complete view.
+    void reload();
   };
 
   return (
@@ -207,6 +216,9 @@ export function App(): JSX.Element {
         driftCount={status?.audiobookshelf.configured ? driftCount : 0}
         driftOnly={driftOnly}
         onDriftOnly={setDriftOnly}
+        healthCount={healthCount}
+        healthOnly={healthOnly}
+        onHealthOnly={setHealthOnly}
       />
 
       {error && <p className="banner banner-error">{error}</p>}
@@ -248,8 +260,12 @@ export function App(): JSX.Element {
         <p className="empty">Loading the library…</p>
       ) : books.length === 0 ? (
         <p className="empty">
-          {driftOnly
-            ? 'Every book agrees with Audiobookshelf.'
+          {driftOnly || healthOnly
+            ? driftOnly && healthOnly
+              ? 'No books match both active filters.'
+              : driftOnly
+                ? 'Every book agrees with Audiobookshelf.'
+                : 'No books need metadata attention.'
             : search
               ? `Nothing matches “${search}”.`
               : 'No books found. Try a scan.'}

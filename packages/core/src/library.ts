@@ -69,6 +69,18 @@ export interface MergedBook extends LibraryBook {
   absDrift: string[];
   /** The same disagreements with both sides' values, so a person can choose between them. */
   absDifferences: AbsDifference[];
+  /** File-derived problems worth fixing; empty when the book passes every check. */
+  healthIssues: BookHealthIssue[];
+}
+
+export type BookHealthIssueCode =
+  'missing-isbn' | 'missing-cover' | 'missing-language' | 'filename-title' | 'duplicate-isbn';
+
+/** One repairable library-health problem derived entirely from EPUBs and their paths. */
+export interface BookHealthIssue {
+  code: BookHealthIssueCode;
+  label: string;
+  detail: string;
 }
 
 /** One field where the file and Audiobookshelf disagree. */

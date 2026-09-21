@@ -543,6 +543,20 @@ export function BookEditor({
         </header>
 
         <div className="sheet-body">
+          {book.healthIssues.length > 0 && (
+            <section className="panel health" aria-labelledby="health-title">
+              <div className="panel-head">
+                <h3 id="health-title">Needs metadata attention</h3>
+              </div>
+              <ul>
+                {book.healthIssues.map((issue) => (
+                  <li key={issue.code}>
+                    <strong>{issue.label}</strong> — {issue.detail}
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
           {differences.length > 0 && (
             <section className="panel drift" aria-labelledby="drift-title">
               <div className="panel-head">

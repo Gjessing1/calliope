@@ -253,6 +253,23 @@ button.card:hover:not(:disabled) {
   padding: 0 6px;
 }
 
+.health-badge {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  min-width: 20px;
+  height: 20px;
+  border-radius: 10px;
+  background: var(--warn-bg);
+  color: var(--warn-ink);
+  border: 1px solid color-mix(in srgb, var(--warn-ink) 35%, transparent);
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-size: 0.7rem;
+  display: grid;
+  place-items: center;
+  padding: 0 6px;
+}
+
 .card-title {
   font-size: 0.95rem;
   line-height: 1.25;
@@ -982,6 +999,19 @@ button.small {
 .panel.drift {
   border-color: var(--warn-ink);
   border-color: color-mix(in srgb, var(--warn-ink) 35%, var(--line));
+}
+
+.panel.health {
+  border-color: color-mix(in srgb, var(--warn-ink) 35%, var(--line));
+  background: var(--warn-bg);
+  color: var(--warn-ink);
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-size: 0.85rem;
+}
+
+.health ul {
+  margin: 8px 0 0;
+  padding-left: 20px;
 }
 
 .drift ul {

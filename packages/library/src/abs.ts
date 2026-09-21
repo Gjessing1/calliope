@@ -56,6 +56,11 @@ interface AbsLibraryItem {
   };
 }
 
+interface AbsUpdateResponse {
+  updated: boolean;
+  libraryItem: AbsLibraryItem;
+}
+
 /** Items per `batch/get` request — bounds the request body on a large library. */
 const BATCH_SIZE = 100;
 
@@ -139,7 +144,10 @@ export class AbsClient {
 
   /** Explicitly replace selected ABS metadata fields with values from the EPUB. */
   async updateMetadata(itemId: string, metadata: AbsMetadataPatch): Promise<AbsBook> {
-    const item = await this.request<AbsLibraryItem>(
+    // ABS wraps the updated item even though its read endpoints return items
+    // directly. Treating this response as the item makes its id/libraryId
+    // undefined and turns a successful ABS write into a local cache failure.
+    const result = await this.request<AbsUpdateResponse>(
       `/api/items/${encodeURIComponent(itemId)}/media`,
       {
         method: 'PATCH',
@@ -147,7 +155,7 @@ export class AbsClient {
         body: JSON.stringify({ metadata }),
       },
     );
-    return toAbsBook(item);
+    return toAbsBook(result.libraryItem);
   }
 
   /**

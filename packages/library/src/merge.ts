@@ -158,12 +158,17 @@ export function absDrift(book: LibraryBook, abs: AbsBook | null): string[] {
 }
 
 /** Attach the ABS record and the disagreements to a library book. */
-export function mergeAbs(book: LibraryBook, abs: AbsBook | null): MergedBook {
+export function mergeAbs(
+  book: LibraryBook,
+  abs: AbsBook | null,
+  healthIssues: MergedBook['healthIssues'] = [],
+): MergedBook {
   const differences = absDifferences(book, abs);
   return {
     ...book,
     abs,
     absDrift: differences.map((difference) => difference.field),
     absDifferences: differences,
+    healthIssues,
   };
 }

@@ -95,6 +95,8 @@ export const api = {
       sort?: string;
       /** Only books whose file and Audiobookshelf disagree. */
       drift?: boolean;
+      /** Only books with missing or suspicious file metadata. */
+      health?: boolean;
       limit?: number;
       offset?: number;
     } = {},

@@ -137,9 +137,10 @@ export function batchRoutes(app: FastifyInstance, state: AppState): void {
       }
       const books: MergedBook[] = [];
       const missing: string[] = [];
+      const health = state.health();
       for (const id of new Set(ids)) {
         const book = state.index.get(id);
-        if (book) books.push(state.merge(book));
+        if (book) books.push(state.merge(book, health.get(book.id) ?? []));
         else missing.push(id);
       }
       return { ...planBatch(books, operation), missing };

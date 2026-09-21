@@ -70,6 +70,16 @@ export function BookGrid({
                   {book.absDrift.length}
                 </span>
               )}
+              {book.healthIssues.length > 0 && (
+                <span
+                  className="health-badge"
+                  title={book.healthIssues
+                    .map((issue) => `${issue.label}: ${issue.detail}`)
+                    .join('\n')}
+                >
+                  {book.healthIssues.length}
+                </span>
+              )}
             </span>
             <span className="card-title">{book.metadata.title || book.folder}</span>
             <span className="card-author">{book.metadata.author || '—'}</span>
