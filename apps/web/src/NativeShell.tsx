@@ -124,8 +124,13 @@ export function NativeShell({ children }: { children: ReactNode }): JSX.Element 
     apkUrl: null,
   });
 
+  // A bundle built without an API origin sends every request to the WebView
+  // itself and can never reach the server. Withholding ready() lets the plugin's
+  // timeout roll it back to the APK's built-in bundle and block it, instead of
+  // confirming a UI that cannot work. This is a build check, not a network one:
+  // a good bundle launched offline must still be confirmed.
   useEffect(() => {
-    if (native) void LiveUpdate.ready().catch(() => undefined);
+    if (native && API_ORIGIN) void LiveUpdate.ready().catch(() => undefined);
   }, [native]);
 
   useEffect(() => {
