@@ -59,7 +59,11 @@ const metadata = {
   file,
   bytes: bytes.length,
   sha256: digest.toString('hex'),
-  checksum: digest.toString('base64'),
+  // What the app hands to LiveUpdate.downloadBundle. The plugin's docs say
+  // base64, but its Android code (7.5.0, LiveUpdate.verifyChecksumForFile)
+  // compares against lowercase hex — a base64 value failed every download with
+  // a checksum mismatch, which the app swallowed, so no phone ever updated.
+  checksum: digest.toString('hex'),
   createdAt: new Date().toISOString(),
 };
 const metadataTmp = path.join(updateDir, `.current.json.${process.pid}`);
