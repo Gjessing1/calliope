@@ -86,6 +86,12 @@ ENV PORT=3008
 ENV CALLIOPE_LIBRARY_ROOT=/books
 ENV CALLIOPE_DATA_DIR=/data
 
+# Uid 1000, the same as the host user that owns /mnt/data/calliope and the book
+# folders, so files Calliope writes stay editable and backup-able without sudo.
+# /data is node's for the smoke test, which runs with no volume mounted.
+RUN mkdir /data && chown node:node /data
+USER node
+
 EXPOSE 3008
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s \
   CMD node -e "fetch('http://127.0.0.1:3008/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
