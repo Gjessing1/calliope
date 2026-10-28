@@ -40,7 +40,7 @@ jobs:
       packages: write # not sufficient alone here; push uses REGISTRY_TOKEN
     env:
       DOCKER_BUILDKIT: '1' # the Dockerfile's RUN --mount=type=cache needs it
-      DEPLOY_DIR: /home/gjessing/docker/calliope
+      DEPLOY_DIR: /home/gjessing/docker/Media/calliope
     steps:
       - uses: actions/checkout@v4
 
