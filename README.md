@@ -15,6 +15,8 @@ It is the library-scale successor to [EPUB BookPrep](https://github.com/gjessing
 whose metadata engine it carries forward — the EPUB 2/3 rules, the OPF writing, the ISBN and cover
 lookup. BookPrep edits one uploaded book and hands it back. Calliope edits the library.
 
+[![Calliope's library view with book covers, titles, authors, search and sorting](assets/screenshots/library.png)](assets/screenshots/library.png)
+
 ## Features
 
 - **The whole library at a glance** — covers, titles, authors, series; search across all of them,
@@ -41,6 +43,24 @@ lookup. BookPrep edits one uploaded book and hands it back. Calliope edits the l
   with both values, and lets you take ABS's value into the file per book or across a selection, or
   open the book in ABS to fix it there. Asks ABS to rescan after a save.
 - **Web and Android** from one codebase.
+
+## Screenshots
+
+Stage metadata edits, revert individual fields, and review the exact changes before writing to an
+EPUB. The edits below are an unsaved example draft. Select a screenshot to see it at full size.
+
+| Metadata editor                                                                                                                                        | Save review                                                                                                                                             |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [![Metadata editor with highlighted draft fields, author roles and two unsaved changes](assets/screenshots/editor.png)](assets/screenshots/editor.png) | [![Save confirmation showing the original and proposed subtitle and publisher](assets/screenshots/save-review.png)](assets/screenshots/save-review.png) |
+
+The shared UI also adapts to phone screens and follows the device's light or dark theme. Shown here
+in a mobile browser with the dark theme:
+
+<p align="center">
+  <a href="assets/screenshots/mobile.png">
+    <img src="assets/screenshots/mobile.png" width="320" alt="Calliope in a mobile browser with a dark theme, search controls and a two-column cover grid">
+  </a>
+</p>
 
 ## Requirements
 
