@@ -23,6 +23,20 @@ const book = (title: string, metadata: Partial<BookMetadata> = {}): LibraryBook 
   scannedAt: 1,
 });
 
+describe('planBatch — read status', () => {
+  it.each([true, false])('plans only changed read flags (%s)', (read) => {
+    const plan = planBatch([book('A', { read: !read }), book('B', { read })], {
+      kind: 'read',
+      read,
+    });
+    expect(plan.items).toMatchObject([
+      { id: 'A', update: { read }, expectedMtimeMs: 5, expectedFileSize: 100 },
+    ]);
+    expect(plan.items[0]?.update).toEqual({ read });
+    expect(plan.unchanged).toEqual([{ id: 'B', title: 'B' }]);
+  });
+});
+
 describe('planBatch — series', () => {
   it('numbers by publication date, undated last, from the start given', () => {
     const plan = planBatch(

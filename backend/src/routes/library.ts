@@ -14,6 +14,7 @@ interface ListQuery {
   sort?: LibrarySort;
   /** `true`: only books whose file and Audiobookshelf disagree. */
   drift?: string;
+  read?: string;
   limit?: string;
   offset?: string;
 }
@@ -47,7 +48,11 @@ function uploadedCover(value: string): Buffer | null {
 }
 
 export function libraryRoutes(app: FastifyInstance, state: AppState): void {
-  app.get<{ Querystring: ListQuery }>('/api/library', async (req) => {
+  app.get<{ Querystring: ListQuery }>('/api/library', async (req, reply) => {
+    if (req.query.read !== undefined && !['true', 'false'].includes(req.query.read)) {
+      return reply.code(400).send({ error: 'Read filter must be true or false' });
+    }
+    const read = req.query.read === undefined ? undefined : req.query.read === 'true';
     const limit = Math.min(Number(req.query.limit ?? 200), 1000);
     const offset = Number(req.query.offset ?? 0);
 
@@ -56,7 +61,7 @@ export function libraryRoutes(app: FastifyInstance, state: AppState): void {
     // for that to cost milliseconds.
     if (req.query.drift === 'true') {
       const differing = state.index
-        .list({ search: req.query.search, sort: req.query.sort ?? 'title', limit: 100_000 })
+        .list({ search: req.query.search, sort: req.query.sort ?? 'title', read, limit: 100_000 })
         .map((book) => state.merge(book))
         .filter((book) => book.absDrift.length > 0);
       return {
@@ -70,13 +75,14 @@ export function libraryRoutes(app: FastifyInstance, state: AppState): void {
 
     const books = state.index.list({
       search: req.query.search,
+      read,
       sort: req.query.sort ?? 'title',
       limit,
       offset,
     });
 
     return {
-      total: state.index.count(req.query.search),
+      total: state.index.count(req.query.search, read),
       limit,
       offset,
       scanning: state.isScanning,
@@ -178,6 +184,9 @@ export function libraryRoutes(app: FastifyInstance, state: AppState): void {
     '/api/books/:id/metadata',
     async (req, reply) => {
       if (!req.body?.metadata) return reply.code(400).send({ error: 'Metadata is required' });
+      if (req.body.metadata.read !== undefined && typeof req.body.metadata.read !== 'boolean') {
+        return reply.code(400).send({ error: 'Read status must be a boolean' });
+      }
       if (!state.index.get(req.params.id)) return reply.code(404).send({ error: 'No such book' });
       let cover: Buffer | null = null;
       const coverSources = [req.body.coverUrl, req.body.coverData, req.body.coverRevisionId].filter(

@@ -70,6 +70,30 @@ describe('findEpubs', () => {
 });
 
 describe('scanLibrary', () => {
+  it('recovers read status from the EPUB after rebuilding the index, and can clear it', async () => {
+    const books = path.join(root, 'books');
+    const covers = new CoverCache(path.join(root, 'covers'));
+    const relative = 'Read/read.epub';
+    await writeEpubAt(relative, 'Read Book', 'An Author');
+    const file = path.join(books, relative);
+    await saveEpubFile(file, { read: true });
+    const index = new LibraryIndex(':memory:');
+    await scanLibrary(books, index, covers);
+    expect(index.get(bookId(relative))?.metadata.read).toBe(true);
+    index.close();
+
+    const rebuilt = new LibraryIndex(':memory:');
+    await scanLibrary(books, rebuilt, covers);
+    expect(rebuilt.get(bookId(relative))?.metadata.read).toBe(true);
+    await saveEpubFile(file, { publisher: 'New publisher' });
+    await scanLibrary(books, rebuilt, covers);
+    expect(rebuilt.get(bookId(relative))?.metadata.read).toBe(true);
+    await saveEpubFile(file, { read: false });
+    await scanLibrary(books, rebuilt, covers);
+    expect(rebuilt.get(bookId(relative))?.metadata.read).toBe(false);
+    rebuilt.close();
+  });
+
   it('adds, then skips unchanged files, then removes deleted ones', async () => {
     const books = path.join(root, 'books');
     const index = new LibraryIndex(':memory:');
@@ -272,6 +296,28 @@ describe('LibraryIndex', () => {
     },
     hasCover: false,
     scannedAt: Date.now(),
+  });
+
+  it('filters read/unread before pagination, with matching search counts and legacy rows', () => {
+    const index = new LibraryIndex(':memory:');
+    const read = makeBook('Read novel', 'Author');
+    read.metadata.read = true;
+    const unread = makeBook('Unread novel', 'Author');
+    const legacy = makeBook('Old novel', 'Author');
+    // Simulate metadata cached before the read flag existed, without a rescan.
+    delete (legacy.metadata as Partial<typeof legacy.metadata>).read;
+    [read, unread, legacy].forEach((book) => index.upsert(book));
+    expect(index.get(legacy.id)?.metadata.read).toBe(false);
+    expect(index.count(undefined, true)).toBe(1);
+    expect(index.count('novel', false)).toBe(2);
+    expect(index.count('Old', true)).toBe(0);
+    expect(index.list({ read: true }).map((book) => book.id)).toEqual([read.id]);
+    expect(
+      index.list({ search: 'novel', read: false, limit: 1, offset: 1 }).map((book) => book.id),
+    ).toEqual([unread.id]);
+    expect(index.list({ read: false })).toHaveLength(2);
+    expect(index.count()).toBe(3);
+    index.close();
   });
 
   it('lists, searches by prefix and sorts', () => {

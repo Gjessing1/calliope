@@ -273,6 +273,20 @@ button.card:hover:not(:disabled) {
   color: var(--ink-soft);
 }
 
+.read-badge {
+  position: absolute;
+  bottom: 8px;
+  left: 8px;
+  padding: 3px 8px;
+  border-radius: var(--radius);
+  background: var(--accent);
+  color: white;
+  font:
+    600 0.75rem ui-sans-serif,
+    system-ui,
+    sans-serif;
+}
+
 .badge {
   position: absolute;
   top: 6px;
@@ -590,6 +604,24 @@ button.icon {
 .field > textarea {
   grid-column: 1 / -1;
   grid-row: 2;
+}
+
+.field > .read-choice {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  font-size: 0.9rem;
+  color: var(--ink);
+}
+
+.read-choice input[type='checkbox'] {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  accent-color: var(--accent);
 }
 
 .field > .revert {

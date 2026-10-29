@@ -27,6 +27,7 @@ interface BatchEditorProps {
 }
 
 const OPERATIONS: ReadonlyArray<{ kind: Kind; label: string; hint: string }> = [
+  { kind: 'read', label: 'Read status', hint: 'Mark the selected books as read or unread' },
   { kind: 'series', label: 'Series', hint: 'Put them in a series, renumber, or take them out' },
   { kind: 'author', label: 'Rename an author', hint: 'Fix one spelling of a name everywhere' },
   { kind: 'language', label: 'Language', hint: 'One language code on every book' },
@@ -63,6 +64,8 @@ function tally(values: string[]): Array<[string, number]> {
 /** The operation in words: shown while it runs, and in the result afterwards. */
 function describe(operation: BatchOperation): string {
   switch (operation.kind) {
+    case 'read':
+      return operation.read ? 'Mark as read' : 'Mark as unread';
     case 'series':
       return operation.series.trim()
         ? `Series → ${operation.series.trim()}${operation.numbering === 'date' ? ', numbered by date' : operation.numbering === 'clear' ? ', no numbers' : ''}`
@@ -113,6 +116,7 @@ export function BatchEditor({
   onClose,
 }: BatchEditorProps): JSX.Element {
   const [kind, setKind] = useState<Kind>('series');
+  const [read, setRead] = useState(true);
   const [series, setSeries] = useState('');
   const [numbering, setNumbering] = useState<'keep' | 'date' | 'clear'>('keep');
   const [start, setStart] = useState(1);
@@ -193,6 +197,8 @@ export function BatchEditor({
 
   const operation = useMemo((): BatchOperation => {
     switch (kind) {
+      case 'read':
+        return { kind, read };
       case 'series':
         return { kind, series, numbering, start };
       case 'language':
@@ -213,6 +219,7 @@ export function BatchEditor({
     }
   }, [
     kind,
+    read,
     series,
     numbering,
     start,
@@ -414,6 +421,30 @@ export function BatchEditor({
                       </fieldset>
                     )}
                   </>
+                )}
+
+                {kind === 'read' && (
+                  <fieldset className="choices">
+                    <legend>Read status</legend>
+                    <label>
+                      <input
+                        type="radio"
+                        name="read-status"
+                        checked={read}
+                        onChange={() => setRead(true)}
+                      />
+                      Read
+                    </label>
+                    <label>
+                      <input
+                        type="radio"
+                        name="read-status"
+                        checked={!read}
+                        onChange={() => setRead(false)}
+                      />
+                      Unread
+                    </label>
+                  </fieldset>
                 )}
 
                 {kind === 'language' && (

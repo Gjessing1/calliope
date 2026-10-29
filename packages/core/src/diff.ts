@@ -2,6 +2,7 @@ import type { Author, BookMetadata, MetadataUpdate } from './metadata.js';
 
 /** The metadata fields a person can see differ between two versions of a book. */
 export type MetadataField =
+  | 'read'
   | 'title'
   | 'subtitle'
   | 'authors'
@@ -26,6 +27,7 @@ export interface FieldChange {
 
 /** In the order the editor lays the fields out, so a change list reads like the form. */
 const FIELDS: ReadonlyArray<readonly [MetadataField, string]> = [
+  ['read', 'Read status'],
   ['title', 'Title'],
   ['subtitle', 'Subtitle'],
   ['authors', 'Authors'],
@@ -47,6 +49,8 @@ const formatAuthor = (author: Author | string): string =>
     : `${author.name}${author.role ? ` (${author.role})` : ''}${author.fileAs ? ` [${author.fileAs}]` : ''}`;
 
 function display(metadata: MetadataUpdate | BookMetadata, key: MetadataField): string | undefined {
+  if (key === 'read')
+    return metadata.read === undefined ? undefined : metadata.read ? 'Read' : 'Unread';
   if (key === 'authors') return metadata.authors?.map(formatAuthor).join(', ');
   if (key === 'subjects') return metadata.subjects?.join(', ');
   if (key === 'contributors') {

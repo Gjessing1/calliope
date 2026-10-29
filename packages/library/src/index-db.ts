@@ -16,6 +16,7 @@ interface BookRow {
 }
 
 function toBook(row: BookRow): LibraryBook {
+  const metadata = JSON.parse(row.metadata) as BookMetadata;
   return {
     id: row.id,
     path: row.path,
@@ -24,7 +25,7 @@ function toBook(row: BookRow): LibraryBook {
     mtimeMs: row.mtime_ms,
     addedAt: row.added_at,
     epubVersion: row.epub_version,
-    metadata: JSON.parse(row.metadata) as BookMetadata,
+    metadata: { ...metadata, read: metadata.read ?? false },
     hasCover: row.has_cover === 1,
     scannedAt: row.scanned_at,
   };
@@ -46,6 +47,8 @@ export interface ListOptions {
   /** Free-text query across title, author, series and subjects. */
   search?: string;
   sort?: LibrarySort;
+  /** Missing status in older cached metadata means unread. */
+  read?: boolean;
   limit?: number;
   offset?: number;
 }
@@ -152,21 +155,34 @@ export class LibraryIndex {
     this.db.prepare('UPDATE books SET added_at = ? WHERE id = ?').run(addedAt, id);
   }
 
-  count(search?: string): number {
+  count(search?: string, read?: boolean): number {
+    const status =
+      read === undefined ? '' : " AND COALESCE(json_extract(metadata, '$.read'), 0) = ?";
+    const params = read === undefined ? [] : [read ? 1 : 0];
     if (search?.trim()) {
       return (
         asRow<{ n: number }>(
           this.db
-            .prepare('SELECT COUNT(*) AS n FROM books_fts WHERE books_fts MATCH ?')
-            .get(ftsQuery(search)),
+            .prepare(
+              `SELECT COUNT(*) AS n FROM books JOIN books_fts ON books_fts.book_id = books.id
+         WHERE books_fts MATCH ?${status}`,
+            )
+            .get(ftsQuery(search), ...params),
         )?.n ?? 0
       );
     }
-    return asRow<{ n: number }>(this.db.prepare('SELECT COUNT(*) AS n FROM books').get())?.n ?? 0;
+    return (
+      asRow<{ n: number }>(
+        this.db.prepare(`SELECT COUNT(*) AS n FROM books WHERE 1 = 1${status}`).get(...params),
+      )?.n ?? 0
+    );
   }
 
   list(options: ListOptions = {}): LibraryBook[] {
-    const { search, sort = 'title', limit = 200, offset = 0 } = options;
+    const { search, sort = 'title', read, limit = 200, offset = 0 } = options;
+    const status =
+      read === undefined ? '' : " AND COALESCE(json_extract(metadata, '$.read'), 0) = ?";
+    const params = read === undefined ? [] : [read ? 1 : 0];
 
     // json_extract keeps the sort in SQLite rather than pulling every row into
     // JS to sort it, which is the whole reason the index exists.
@@ -200,16 +216,18 @@ export class LibraryIndex {
             // does not resolve an alias on the left of MATCH.
             `SELECT b.* FROM books b
              JOIN books_fts ON books_fts.book_id = b.id
-             WHERE books_fts MATCH ?
+             WHERE books_fts MATCH ?${status}
              ORDER BY ${order} LIMIT ? OFFSET ?`,
           )
-          .all(ftsQuery(search), limit, offset),
+          .all(ftsQuery(search), ...params, limit, offset),
       );
       return rows.map(toBook);
     }
 
     const rows = asRows<BookRow>(
-      this.db.prepare(`SELECT * FROM books ORDER BY ${order} LIMIT ? OFFSET ?`).all(limit, offset),
+      this.db
+        .prepare(`SELECT * FROM books WHERE 1 = 1${status} ORDER BY ${order} LIMIT ? OFFSET ?`)
+        .all(...params, limit, offset),
     );
     return rows.map(toBook);
   }

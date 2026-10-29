@@ -152,13 +152,14 @@ export const api = {
       sort?: string;
       /** Only books whose file and Audiobookshelf disagree. */
       drift?: boolean;
+      read?: boolean;
       limit?: number;
       offset?: number;
     } = {},
   ) => {
     const query = new URLSearchParams();
     for (const [key, value] of Object.entries(params)) {
-      if (value !== undefined && value !== '' && value !== false) query.set(key, String(value));
+      if (value !== undefined && value !== '') query.set(key, String(value));
     }
     return request<LibraryPage>(`/api/library?${query}`);
   },

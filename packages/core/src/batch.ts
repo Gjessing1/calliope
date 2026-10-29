@@ -13,6 +13,7 @@ export type TidyPart = 'whitespace' | 'description' | 'date' | 'language' | 'sub
  * which is what the user reviews and what gets written.
  */
 export type BatchOperation =
+  | { kind: 'read'; read: boolean }
   | {
       kind: 'series';
       /** '' takes the books out of their series. */

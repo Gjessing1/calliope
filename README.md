@@ -23,6 +23,9 @@ lookup. BookPrep edits one uploaded book and hands it back. Calliope edits the l
   sort by title, author, series, recently added or recently modified.
 - **In-place metadata editing** — title, subtitle, authors and their roles, contributors, series,
   ISBN, language, publisher, date, description, subjects.
+- **Read or unread** — mark individual books or a selection as read, show read badges, and filter
+  the library by status. The flag is stored in each EPUB and survives rebuilding the index.
+  No ratings, progress, or reading dates; independent of Audiobookshelf’s reading status.
 - **Standards-compliant writes** — EPUB 2 files get EPUB 2 metadata, EPUB 3 files get EPUB 3
   metadata, and the version is never upgraded. Identifiers and vendor metadata the tool does not
   understand are preserved exactly.

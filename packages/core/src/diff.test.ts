@@ -54,6 +54,16 @@ describe('metadataChanges', () => {
     rights: 'Public domain',
   };
 
+  it('previews read and unread, while a partial metadata edit leaves status alone', () => {
+    expect(metadataChanges(file, { read: true })).toEqual([
+      { key: 'read', label: 'Read status', before: 'Unread', after: 'Read' },
+    ]);
+    expect(metadataChanges({ ...file, read: true }, { read: false })).toEqual([
+      { key: 'read', label: 'Read status', before: 'Read', after: 'Unread' },
+    ]);
+    expect(metadataChanges({ ...file, read: true }, { title: file.title })).toEqual([]);
+  });
+
   it('reports only the fields that differ, in form order', () => {
     const changes = metadataChanges(file, {
       ...file,

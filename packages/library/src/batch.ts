@@ -36,6 +36,8 @@ const asInFile = (metadata: BookMetadata): BookMetadata => ({
 function propose(operation: BatchOperation, book: PlannedBook, position: number): MetadataUpdate {
   const metadata = book.metadata;
   switch (operation.kind) {
+    case 'read':
+      return { read: operation.read };
     case 'series': {
       const series = operation.series.trim();
       // Out of a series means out of its numbering too.
@@ -126,6 +128,11 @@ function tidy(metadata: BookMetadata, parts: Set<TidyPart>): MetadataUpdate {
  */
 function check(operation: BatchOperation): { blocking: string | null; notes: string[] } {
   switch (operation.kind) {
+    case 'read':
+      return {
+        blocking: typeof operation.read === 'boolean' ? null : 'Choose Read or Unread.',
+        notes: [],
+      };
     case 'language': {
       const { code, warning } = normalizeLanguageCode(operation.language.trim());
       if (!code) return { blocking: 'Enter a language code, such as en, nb or de.', notes: [] };

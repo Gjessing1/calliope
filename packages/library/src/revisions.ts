@@ -86,9 +86,11 @@ export class RevisionStore {
           try {
             const id = name.slice(0, -5);
             try {
-              return JSON.parse(
+              const revision = JSON.parse(
                 await readFile(path.join(bookDir, `${id}.json`), 'utf8'),
               ) as BookRevision;
+              revision.metadata = { ...revision.metadata, read: revision.metadata.read ?? false };
+              return revision;
             } catch {
               return await this.describe(path.join(bookDir, name), id, Number(match[1]));
             }

@@ -4,6 +4,7 @@ import { Builder } from 'xml2js';
 import type { Author, MetadataUpdate } from '@calliope/core';
 import { normalizeLanguageCode } from './language.js';
 import { extractMetadata } from './read.js';
+import { writeReadStatus } from './read-status.js';
 import { sanitizeMetadataString } from './sanitize.js';
 import {
   attrsOf,
@@ -122,6 +123,7 @@ export async function writeEpub(
   writeIdentifier(pkg, meta, updates, isEpub2, taken, warnings);
   writeSubjects(meta, updates);
   writeSeries(meta, updates, isEpub2, taken);
+  writeReadStatus(pkg, updates.read);
 
   if (coverBuffer) replaceCover(zip, opf, opfPath, meta, coverBuffer, isEpub2);
   pruneOrphanedRefinements(pkg, meta, idsBefore);

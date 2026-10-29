@@ -75,6 +75,7 @@ const authorObjects = (authors: MetadataUpdate['authors']): Author[] =>
   );
 
 const metadataForm = (metadata: BookMetadata): MetadataUpdate => ({
+  read: metadata.read ?? false,
   title: metadata.title,
   subtitle: metadata.subtitle,
   authors: metadata.authors,
@@ -744,6 +745,16 @@ export function BookEditor({
           )}
 
           <div className="fields">
+            <Field label="Read status" className="read-status" {...fieldState('read')}>
+              <span className="read-choice">
+                <input
+                  type="checkbox"
+                  checked={form.read ?? false}
+                  onChange={(event) => field('read', event.target.checked)}
+                />
+                Marked as read
+              </span>
+            </Field>
             <Field label="Title" {...fieldState('title')}>
               <input
                 value={form.title ?? ''}

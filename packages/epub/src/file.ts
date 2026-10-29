@@ -24,7 +24,7 @@ export interface ReadFileResult {
 export async function readEpubFile(filePath: string): Promise<ReadFileResult> {
   const opened = await openEpubFile(filePath);
   return {
-    metadata: extractMetadata(opened.meta),
+    metadata: extractMetadata(opened.meta, opened.opf.package.$?.prefix),
     version: opened.version,
     cover: await getCoverBuffer(opened.zip, opened.opf, opened.opfPath),
   };

@@ -18,6 +18,7 @@ interface BatchItem {
 }
 
 const OPERATIONS = new Set<BatchOperation['kind']>([
+  'read',
   'series',
   'language',
   'publisher',
@@ -29,6 +30,7 @@ const OPERATIONS = new Set<BatchOperation['kind']>([
 
 /** The keys a batch may write. Anything else in a client's update is dropped. */
 const UPDATE_KEYS: ReadonlyArray<keyof MetadataUpdate> = [
+  'read',
   'title',
   'subtitle',
   'authors',
@@ -163,6 +165,13 @@ export function batchRoutes(app: FastifyInstance, state: AppState): void {
         expectedMtimeMs: Number(item.expectedMtimeMs),
         expectedFileSize: Number(item.expectedFileSize),
       }));
+      if (
+        clean.some(
+          (item) => item.update.read !== undefined && typeof item.update.read !== 'boolean',
+        )
+      ) {
+        return reply.code(400).send({ error: 'Read status must be a boolean' });
+      }
       // Without the reviewed file state there is nothing to detect a conflict
       // against, and a batch is the last place to overwrite an edit blindly.
       if (clean.some((i) => !Number.isFinite(i.expectedMtimeMs + i.expectedFileSize))) {

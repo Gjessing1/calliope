@@ -1,6 +1,7 @@
 import type { MergedBook } from '@calliope/core';
 
 export type LibraryView = 'title' | 'author' | 'series' | 'added' | 'modified';
+export type ReadFilter = 'all' | 'unread' | 'read';
 
 export interface BookGroup {
   label: string;

@@ -1,8 +1,10 @@
 import type { JSX } from 'react';
-import type { LibraryView } from '../library-view.js';
+import type { LibraryView, ReadFilter } from '../library-view.js';
 interface ToolbarProps {
   search: string;
   view: LibraryView;
+  readFilter: ReadFilter;
+  onReadFilter: (value: ReadFilter) => void;
   scanning: boolean;
   scanLabel: string;
   selecting: boolean;
@@ -19,6 +21,8 @@ interface ToolbarProps {
 export function Toolbar({
   search,
   view,
+  readFilter,
+  onReadFilter,
   scanning,
   scanLabel,
   selecting,
@@ -50,6 +54,15 @@ export function Toolbar({
         <option value="series">Series</option>
         <option value="added">Recently added</option>
         <option value="modified">Recently modified</option>
+      </select>
+      <select
+        value={readFilter}
+        onChange={(event) => onReadFilter(event.target.value as ReadFilter)}
+        aria-label="Read status"
+      >
+        <option value="all">All books</option>
+        <option value="unread">Unread</option>
+        <option value="read">Read</option>
       </select>
       {(driftCount > 0 || driftOnly) && (
         <button

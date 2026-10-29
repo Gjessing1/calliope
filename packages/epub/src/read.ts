@@ -2,6 +2,7 @@ import JSZip from 'jszip';
 import { parseStringPromise } from 'xml2js';
 import type { Author, BookMetadata, Contributor } from '@calliope/core';
 import { normalizeLanguageCode } from './language.js';
+import { readStatus } from './read-status.js';
 import { attrsOf, isIsbnIdentifier, refinedId, seriesCollections, textOf } from './opf.js';
 import type { OpfDocument, OpfMetadata, XmlNode } from './opf.js';
 
@@ -64,7 +65,7 @@ export async function readEpub(buffer: Buffer | Uint8Array | ArrayBuffer): Promi
  * survive a round-trip through one field. `author` is kept alongside for list
  * views and filenames.
  */
-export function extractMetadata(meta: OpfMetadata): BookMetadata {
+export function extractMetadata(meta: OpfMetadata, prefixDeclaration = ''): BookMetadata {
   const get = (k: string): string => textOf((meta[k] as XmlNode[] | undefined)?.[0]);
 
   // The series is the first series-type collection, and its position is the
@@ -166,6 +167,7 @@ export function extractMetadata(meta: OpfMetadata): BookMetadata {
   const langResult = normalizeLanguageCode(rawLanguage);
 
   return {
+    read: readStatus(meta, prefixDeclaration),
     title: mainTitle,
     subtitle,
     authors,

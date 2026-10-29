@@ -10,6 +10,8 @@
  * The writer relies on that distinction — see @calliope/epub's `writeEpub`.
  */
 export interface BookMetadata {
+  /** Personal read/unread flag stored in the EPUB; absent metadata means unread. */
+  read: boolean;
   title: string;
   /** Rendered into `dc:title` as `Title: Subtitle` — see the note in `writeEpub`. */
   subtitle: string;
@@ -57,6 +59,7 @@ export interface Contributor {
  * unchanged names keep their role attributes.
  */
 export interface MetadataUpdate {
+  read?: boolean;
   title?: string;
   subtitle?: string;
   authors?: Array<Author | string>;
@@ -76,6 +79,7 @@ export interface MetadataUpdate {
 /** An empty, fully-populated metadata record — the shape a caller can spread over. */
 export function emptyMetadata(): BookMetadata {
   return {
+    read: false,
     title: '',
     subtitle: '',
     authors: [],

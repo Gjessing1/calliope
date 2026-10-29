@@ -38,6 +38,80 @@ const BASE_META = `    <dc:title>Crime and Punishment</dc:title>
     <dc:language>rus</dc:language>
     <dc:identifier id="bookid">urn:uuid:1f0e3dad-9990-4b2e-8b3a-000000000001</dc:identifier>`;
 
+describe('read status', () => {
+  it.each(['2.0', '3.0'] as const)(
+    'round-trips read/unread without changing EPUB %s or other metadata',
+    async (version) => {
+      const original = await readEpub(
+        await makeEpub(
+          version,
+          `${BASE_META}
+      <meta name="vendor:note" content="keep me"/>
+      <dc:subject>Fiction</dc:subject>`,
+        ),
+      );
+      expect(extractMetadata(original.meta).read).toBe(false);
+      const marked = await writeEpub(original.zip, original.opfPath, original.opf, { read: true });
+      const reopened = await readEpub(marked.buffer);
+      expect(reopened.version).toBe(version);
+      expect(extractMetadata(reopened.meta, reopened.opf.package.$?.prefix).read).toBe(true);
+      if (version === '2.0') {
+        expect(reopened.meta.meta?.find((m) => m.$?.name === 'calliope:read')?.$?.content).toBe(
+          'true',
+        );
+        expect(reopened.meta.meta?.some((m) => m.$?.property)).toBe(false);
+      } else {
+        expect(reopened.opf.package.$?.prefix).toContain(
+          'calliope: https://books.gjessing.io/vocab#',
+        );
+        expect(reopened.meta.meta?.find((m) => m.$?.property === 'calliope:read')?._).toBe('true');
+      }
+      const edited = await writeEpub(reopened.zip, reopened.opfPath, reopened.opf, {
+        publisher: 'Publisher',
+      });
+      const stillRead = await readEpub(edited.buffer);
+      expect(extractMetadata(stillRead.meta, stillRead.opf.package.$?.prefix).read).toBe(true);
+      const cleared = await writeEpub(stillRead.zip, stillRead.opfPath, stillRead.opf, {
+        read: false,
+      });
+      const unread = await readEpub(cleared.buffer);
+      expect(extractMetadata(unread.meta, unread.opf.package.$?.prefix)).toMatchObject({
+        read: false,
+        title: 'Crime and Punishment',
+        publisher: 'Publisher',
+        subjects: ['Fiction'],
+      });
+      expect(unread.meta.meta?.find((m) => m.$?.name === 'vendor:note')?.$?.content).toBe(
+        'keep me',
+      );
+      expect(await unread.zip.file('OEBPS/nav.xhtml')!.async('string')).toBe(
+        '<html><body/></html>',
+      );
+      expect(unread.version).toBe(version);
+    },
+  );
+
+  it('preserves a conflicting vendor prefix and reads a renamed Calliope prefix', async () => {
+    const opened = await readEpub(
+      await makeEpub('3.0', `${BASE_META}<meta property="calliope:read">vendor value</meta>`),
+    );
+    opened.opf.package.$!.prefix = 'calliope: https://vendor.example/metadata#';
+    expect(extractMetadata(opened.meta, opened.opf.package.$?.prefix).read).toBe(false);
+    const saved = await writeEpub(opened.zip, opened.opfPath, opened.opf, { read: true });
+    const reopened = await readEpub(saved.buffer);
+    expect(reopened.opf.package.$?.prefix).toBe(
+      'calliope: https://vendor.example/metadata# calliope1: https://books.gjessing.io/vocab#',
+    );
+    expect(extractMetadata(reopened.meta, reopened.opf.package.$?.prefix).read).toBe(true);
+    const cleared = await writeEpub(reopened.zip, reopened.opfPath, reopened.opf, { read: false });
+    const unread = await readEpub(cleared.buffer);
+    expect(unread.meta.meta?.find((m) => m.$?.property === 'calliope:read')?._).toBe(
+      'vendor value',
+    );
+    expect(extractMetadata(unread.meta, unread.opf.package.$?.prefix).read).toBe(false);
+  });
+});
+
 describe('normalizeLanguageCode', () => {
   it('converts a 3-letter code to its 2-letter form', () => {
     expect(normalizeLanguageCode('nor')).toEqual({
@@ -587,6 +661,7 @@ describe('writeEpub — archive invariants', () => {
 describe('normalizeMetadata', () => {
   it('trims, deduplicates subjects and reports what it converted', () => {
     const result = normalizeMetadata({
+      read: false,
       title: '  Sult  ',
       subtitle: '',
       authors: [],

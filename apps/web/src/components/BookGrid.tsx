@@ -55,6 +55,7 @@ export function BookGrid({
                 </span>
               )}
               {selecting && <span className="check" aria-hidden="true" />}
+              {book.metadata.read && <span className="read-badge">Read</span>}
               {/* A book ABS and the file disagree about is the one worth
                     finding, so the badge sits on the cover rather than in a
                     detail panel nobody opens. */}
