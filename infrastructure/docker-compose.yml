@@ -1,6 +1,6 @@
 # Deployment template for Calliope.
 #
-# The live copy lives at /home/gjessing/docker/Media/calliope/docker-compose.yml with
+# The live copy lives at /home/gjessing/docker/media/calliope/docker-compose.yml with
 # its own .env beside it; CI's deploy step runs `docker compose pull && up -d`
 # there. This file is the committed reference — keep the two in step.
 
@@ -52,7 +52,7 @@ services:
     networks:
       - calliope
 
-# Audiobookshelf runs from /home/gjessing/docker/Media/audiobookshelf with its own
+# Audiobookshelf runs from /home/gjessing/docker/media/audiobookshelf with its own
 # compose file. Put both on this external network so Calliope can reach it by
 # container name: `docker network create calliope`, then add the network to the
 # audiobookshelf service too.
